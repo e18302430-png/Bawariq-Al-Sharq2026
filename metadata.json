@@ -1,0 +1,6 @@
+{
+  "name": "بوارق الشرق للخدمات اللوجستية",
+  "description": "منصة متطورة واحترافية لتسجيل مناديب التوصيل وجدولة مواعيد المقابلات وتنزيل البيانات",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

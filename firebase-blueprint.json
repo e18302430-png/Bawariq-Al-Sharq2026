@@ -1,0 +1,28 @@
+{
+  "entities": {
+    "couriers": {
+      "title": "Courier",
+      "description": "Courier registration and appointment booking document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+          "name": { "type": "string" },
+          "phone": { "type": "string" },
+          "city": { "type": "string" },
+          "experience": { "type": "string" },
+          "apps": { "type": "array" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "interviewDate": { "type": "string" },
+          "interviewTime": { "type": "string" },
+          "status": { "type": "string", "enum": ["جديد", "تمت المقابلة", "تم التفعيل"] }
+      },
+      "required": ["name", "phone", "city", "createdAt"]
+    }
+  },
+  "firestore": {
+    "couriers/{courierId}": {
+      "schema": "couriers",
+      "description": "Collection of courier applications and verification data"
+    }
+  }
+}
