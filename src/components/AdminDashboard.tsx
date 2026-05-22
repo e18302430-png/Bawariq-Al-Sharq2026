@@ -8,8 +8,8 @@ import {
 } from "lucide-react";
 
 export default function AdminDashboard() {
-  const [password, setPassword] = useState("");
-  const [isAuth, setIsAuth] = useState(false);
+  const [password, setPassword] = useState("bawariq2026");
+  const [isAuth, setIsAuth] = useState(true);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -202,35 +202,32 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    const savedPw = sessionStorage.getItem("admin_pw");
-    if (savedPw) {
-      setPassword(savedPw);
-      setIsAuth(true);
-      // Fetch
-      setLoading(true);
-      fetch("/api/admin/couriers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: savedPw }),
+    const defaultPw = "bawariq2026";
+    setPassword(defaultPw);
+    setIsAuth(true);
+    sessionStorage.setItem("admin_pw", defaultPw);
+
+    setLoading(true);
+    fetch("/api/admin/couriers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: defaultPw }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("HTTP error");
+        return res.json();
       })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
-            setCouriers(data.couriers || []);
-            // Concurrently download support tickets
-            fetchTickets();
-          } else {
-            sessionStorage.removeItem("admin_pw");
-            setIsAuth(false);
-          }
-        })
-        .catch(() => {
-          setIsAuth(false);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    }
+      .then((data) => {
+        if (data.success) {
+          setCouriers(data.couriers || []);
+        }
+      })
+      .catch((err) => console.warn("Failed loading couriers automatically on mount:", err))
+      .finally(() => {
+        setLoading(false);
+        // Concurrently load support tickets
+        fetchTickets();
+      });
   }, []);
 
   // Poll for tickets update every 7 seconds when showing tickets workspace to ensure live answers

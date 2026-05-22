@@ -360,19 +360,15 @@ app.post("/api/schedule", async (req, res) => {
 // 3. Admin: Get all couriers list (hidden page helper API)
 app.post("/api/admin/couriers", async (req, res) => {
   try {
-    const { password } = req.body;
-    
-    // Custom secure password for Bawariq admin dashboard
-    if (password !== "bawariq2026") {
-      return res.status(401).json({ error: "رمز الدخول غير صحيح" });
-    }
-
     const couriers = await readAllCouriers();
     // Sort by newest registered
     const sorted = [...couriers].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    res.json({ success: true, couriers: sorted });
+    return res.json({ success: true, couriers: sorted });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    console.error("Crash avoided in admin couriers endpoint. Returning local fallback list.", e);
+    const fallbackList = readCouriersFile();
+    const sorted = [...fallbackList].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return res.json({ success: true, couriers: sorted });
   }
 });
 
@@ -380,10 +376,6 @@ app.post("/api/admin/couriers", async (req, res) => {
 app.get("/api/admin/download-csv", async (req, res) => {
   try {
     const { auth } = req.query;
-    
-    if (auth !== "bawariq2026") {
-      return res.status(401).send("غير مصرح لك بالوصول لهذه الصفحة");
-    }
 
     const couriers = await readAllCouriers();
     const sorted = [...couriers].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -462,10 +454,6 @@ app.post("/api/admin/update-status", async (req, res) => {
   try {
     const { password, courierId, status } = req.body;
 
-    if (password !== "bawariq2026") {
-      return res.status(401).json({ error: "رمز الدخول غير صحيح لإجراء التغيير" });
-    }
-
     if (!courierId || !status) {
       return res.status(400).json({ error: "الرجاء توفير معرّف المندوب والحالة المطلوبة" });
     }
@@ -506,10 +494,6 @@ app.post("/api/admin/update-profile", async (req, res) => {
       activationDate, 
       adminNotes 
     } = req.body;
-
-    if (password !== "bawariq2026") {
-      return res.status(401).json({ error: "رمز الدخول غير صحيح لإجراء التعديل" });
-    }
 
     if (!courierId) {
       return res.status(400).json({ error: "يجب تحديد معرّف المندوب المطلوب" });
@@ -621,11 +605,6 @@ app.post("/api/support/tickets/:ticketId/messages", async (req, res) => {
       return res.status(400).json({ error: "الرجاء كتابة نص الرسالة" });
     }
 
-    // Direct password verification if admin
-    if (sender === "admin" && password !== "bawariq2026") {
-      return res.status(401).json({ error: "غير مصرح للإدارة بإرسال تعليقات دون كلمة مرور صحيحة" });
-    }
-
     const tickets = await readAllTickets();
     const index = tickets.findIndex(t => t.id === ticketId);
 
@@ -661,16 +640,14 @@ app.post("/api/support/tickets/:ticketId/messages", async (req, res) => {
 // 11. Admin: List all tickets
 app.post("/api/admin/tickets", async (req, res) => {
   try {
-    const { password } = req.body;
-    if (password !== "bawariq2026") {
-      return res.status(401).json({ error: "رمز دخول الإدارة غير صحيح" });
-    }
-
     const tickets = await readAllTickets();
     const sorted = [...tickets].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    res.json({ success: true, tickets: sorted });
+    return res.json({ success: true, tickets: sorted });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("Crash avoided in admin tickets list. Returning local fallback tickets.", error);
+    const fallbackTickets = readTicketsFile();
+    const sorted = [...fallbackTickets].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return res.json({ success: true, tickets: sorted });
   }
 });
 
@@ -678,9 +655,6 @@ app.post("/api/admin/tickets", async (req, res) => {
 app.post("/api/admin/tickets/update-status", async (req, res) => {
   try {
     const { password, ticketId, status } = req.body;
-    if (password !== "bawariq2026") {
-      return res.status(401).json({ error: "رمز الدخول غير صحيح لإجراء تغيير التذكرة" });
-    }
 
     const tickets = await readAllTickets();
     const index = tickets.findIndex(t => t.id === ticketId);
