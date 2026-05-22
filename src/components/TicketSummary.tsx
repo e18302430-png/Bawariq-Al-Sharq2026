@@ -29,8 +29,14 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
     try {
       const res = await fetch(`/api/couriers/${courierId}`);
       if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.courier) {
+        let data;
+        try {
+          data = await res.json();
+        } catch (jsonErr) {
+          console.warn("Returned response was not valid JSON:", jsonErr);
+          return;
+        }
+        if (data && data.success && data.courier) {
           const c = data.courier;
           setLocalStatus(c.status || "جديد");
           if (c.interviewDate) setLocalDate(c.interviewDate);

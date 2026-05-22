@@ -71,7 +71,12 @@ export default function AppointmentScheduler({ courierId, courierName, onSuccess
         }),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        throw new Error("حدث خطأ في الخادم أثناء معالجة الجدولة. يرجى المحاولة لاحقاً.");
+      }
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || "فشلت جدولة الموعد، الرجاء المحاولة مجدداً.");

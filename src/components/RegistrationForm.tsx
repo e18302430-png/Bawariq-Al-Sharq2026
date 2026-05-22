@@ -1,14 +1,15 @@
 import React, { useState } from "react";
 import { DELIVERY_APPS, SAUDI_CITIES, EXPERIENCE_LEVELS } from "../data";
-import { User, Phone, MapPin, Briefcase, Check, ArrowLeft, ArrowRight, Loader2, Landmark } from "lucide-react";
+import { User, Phone, MapPin, Briefcase, Check, ArrowLeft, ArrowRight, Loader2, Landmark, Fingerprint } from "lucide-react";
 
 interface RegistrationFormProps {
-  onSuccess: (courierId: string, info: { name: string; phone: string; city: string; apps: string[] }) => void;
+  onSuccess: (courierId: string, info: { name: string; phone: string; city: string; apps: string[]; nationalId?: string }) => void;
 }
 
 export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [nationalId, setNationalId] = useState("");
   const [city, setCity] = useState(SAUDI_CITIES[0]);
   const [customCity, setCustomCity] = useState("");
   const [useCustomCity, setUseCustomCity] = useState(false);
@@ -61,6 +62,21 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
       return;
     }
 
+    const validateNationalId = (idInput: string) => {
+      const clean = idInput.trim();
+      return /^[12][0-9]{9}$/.test(clean);
+    };
+
+    if (!nationalId.trim()) {
+      setError("الرجاء إدخال رقم الهوية الوطنية أو الإقامة.");
+      return;
+    }
+
+    if (!validateNationalId(nationalId)) {
+      setError("رقم الهوية الوطنية أو الإقامة غير صحيح. يجب أن يتكون من 10 خانات ويبدأ بـ 1 للسعوديين أو 2 للمقيمين.");
+      return;
+    }
+
     if (selectedApps.length === 0) {
       setError("الرجاء اختيار تطبيق واحد على الأقل ترغب بالعمل عليه لتسهيل معالجة طلبك.");
       return;
@@ -86,13 +102,19 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
         body: JSON.stringify({
           name: name.trim(),
           phone: phone.trim(),
+          nationalId: nationalId.trim(),
           city: finalCity,
           experience: finalExperience,
           apps: selectedApps,
         }),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        throw new Error("حدث خطأ في معالجة طلب التسجيل لدينا. يرجى مراجعة المدخلات والمحاولة مرة أخرى.");
+      }
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || "حدث خطأ غير متوقع أثناء تسجيل الطلب.");
@@ -104,6 +126,7 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
         phone: phone.trim(),
         city: finalCity,
         apps: selectedApps,
+        nationalId: nationalId.trim(),
       });
     } catch (err: any) {
       setError(err.message || "حدث خطأ في الاتصال بالخادم الرئيسي. الرجاء المحاولة مجدداً.");
@@ -129,7 +152,7 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
           <span>الخطوة 1 من 2: تعبئة البيانات الأساسية للمندوب</span>
         </h3>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-3">
           {/* Candidate Full Name */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-300 block">الاسم الكامل (ثنائى أو ثلاثي) <span className="text-amber-500">*</span></label>
@@ -150,7 +173,7 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
 
           {/* Candidate Phone Number */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 block">رقم الجوال النشط (المرتبط بأبشر وتطبيقات التوصيل) <span className="text-amber-500">*</span></label>
+            <label className="text-xs font-bold text-slate-300 block">رقم الجوال النشط (المرتبط بأبشر والتوصيل) <span className="text-amber-500">*</span></label>
             <div className="relative">
               <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-500">
                 <Phone className="w-4.5 h-4.5" />
@@ -165,9 +188,25 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
                 dir="ltr"
               />
             </div>
-            <p className="text-[10px] text-slate-500">
-              مثال: <span className="font-mono">0512345678</span>
-            </p>
+          </div>
+
+          {/* Candidate National ID / Iqama */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-300 block">رقم الهوية الوطنية أو الإقامة <span className="text-amber-500">*</span></label>
+            <div className="relative">
+              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-500">
+                <Fingerprint className="w-4.5 h-4.5" />
+              </div>
+              <input
+                type="text"
+                required
+                maxLength={10}
+                value={nationalId}
+                onChange={(e) => setNationalId(e.target.value.replace(/\D/g, ""))}
+                placeholder="أدخل 10 خانات (مثال: 1xxxxxxxxx)"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-11 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all font-mono tracking-wider"
+              />
+            </div>
           </div>
         </div>
 
