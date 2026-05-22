@@ -129,33 +129,45 @@ function writeCouriersFile(couriers: Courier[]) {
 async function readAllCouriers(): Promise<Courier[]> {
   if (firestoreDb) {
     try {
-      const snap = await getDocs(collection(firestoreDb, "couriers"));
-      const list: Courier[] = [];
-      snap.forEach((document) => {
-        const data = document.data();
-        list.push({
-          id: document.id,
-          name: data.name || "",
-          phone: data.phone || "",
-          city: data.city || "",
-          experience: data.experience || "",
-          apps: data.apps || [],
-          createdAt: data.createdAt || new Date().toISOString(),
-          status: data.status || "جديد",
-          interviewDate: data.interviewDate,
-          interviewTime: data.interviewTime,
-          nationalId: data.nationalId || "",
-          iban: data.iban || "",
-          carPlate: data.carPlate || "",
-          vehicleModel: data.vehicleModel || "",
-          appCourierCode: data.appCourierCode || "",
-          activationDate: data.activationDate || "",
-          adminNotes: data.adminNotes || "",
-        } as Courier);
-      });
-      // Synchronize back to local backup so local file is always mirrors remote
-      writeCouriersFile(list);
-      return list;
+      const fetchPromise = (async () => {
+        const snap = await getDocs(collection(firestoreDb!, "couriers"));
+        const list: Courier[] = [];
+        snap.forEach((document) => {
+          const data = document.data();
+          list.push({
+            id: document.id,
+            name: data.name || "",
+            phone: data.phone || "",
+            city: data.city || "",
+            experience: data.experience || "",
+            apps: data.apps || [],
+            createdAt: data.createdAt || new Date().toISOString(),
+            status: data.status || "جديد",
+            interviewDate: data.interviewDate,
+            interviewTime: data.interviewTime,
+            nationalId: data.nationalId || "",
+            iban: data.iban || "",
+            carPlate: data.carPlate || "",
+            vehicleModel: data.vehicleModel || "",
+            appCourierCode: data.appCourierCode || "",
+            activationDate: data.activationDate || "",
+            adminNotes: data.adminNotes || "",
+          } as Courier);
+        });
+        writeCouriersFile(list);
+        return list;
+      })();
+
+      // Prevent database connection failure from hanging the client's request
+      return await Promise.race([
+        fetchPromise,
+        new Promise<Courier[]>((resolve) => {
+          setTimeout(() => {
+            console.warn("⏰ Firestore courier fetch timed out. Falling back to local file JSON database.");
+            resolve(readCouriersFile());
+          }, 1500);
+        })
+      ]);
     } catch (error) {
       console.warn("Firestore collection fetch failed, querying local JSON fallback.", error);
       return readCouriersFile();
@@ -165,7 +177,7 @@ async function readAllCouriers(): Promise<Courier[]> {
 }
 
 async function saveCourier(courier: Courier) {
-  // 1. Write to local memory/disk immediately
+  // 1. Write to local memory/disk immediately so data is secure and persisted instantly
   const localList = readCouriersFile();
   const index = localList.findIndex((c) => c.id === courier.id);
   if (index !== -1) {
@@ -175,55 +187,73 @@ async function saveCourier(courier: Courier) {
   }
   writeCouriersFile(localList);
 
-  // 2. Write to Firestore permanently
+  // 2. Write to Firestore permanently in background without blocking the HTTP response
   if (firestoreDb) {
-    try {
-      await setDoc(doc(firestoreDb, "couriers", courier.id), {
-        name: courier.name,
-        phone: courier.phone,
-        city: courier.city,
-        experience: courier.experience,
-        apps: courier.apps,
-        createdAt: courier.createdAt,
-        status: courier.status,
-        interviewDate: courier.interviewDate || "",
-        interviewTime: courier.interviewTime || "",
-        nationalId: courier.nationalId || "",
-        iban: courier.iban || "",
-        carPlate: courier.carPlate || "",
-        vehicleModel: courier.vehicleModel || "",
-        appCourierCode: courier.appCourierCode || "",
-        activationDate: courier.activationDate || "",
-        adminNotes: courier.adminNotes || "",
-      });
-      console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore.`);
-    } catch (e) {
-      console.error("Failed to synchronize to Firestore, stored on disk temporarily.", e);
-    }
+    (async () => {
+      try {
+        await Promise.race([
+          setDoc(doc(firestoreDb!, "couriers", courier.id), {
+            name: courier.name,
+            phone: courier.phone,
+            city: courier.city,
+            experience: courier.experience,
+            apps: courier.apps,
+            createdAt: courier.createdAt,
+            status: courier.status,
+            interviewDate: courier.interviewDate || "",
+            interviewTime: courier.interviewTime || "",
+            nationalId: courier.nationalId || "",
+            iban: courier.iban || "",
+            carPlate: courier.carPlate || "",
+            vehicleModel: courier.vehicleModel || "",
+            appCourierCode: courier.appCourierCode || "",
+            activationDate: courier.activationDate || "",
+            adminNotes: courier.adminNotes || "",
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1500))
+        ]);
+        console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore.`);
+      } catch (e) {
+        console.warn("Failed to synchronize to Firestore (background), stored locally.", e);
+      }
+    })();
   }
 }
 
 async function readAllTickets(): Promise<SupportTicket[]> {
   if (firestoreDb) {
     try {
-      const snap = await getDocs(collection(firestoreDb, "support_tickets"));
-      const list: SupportTicket[] = [];
-      snap.forEach((document) => {
-        const data = document.data();
-        list.push({
-          id: document.id,
-          courierName: data.courierName || "",
-          courierPhone: data.courierPhone || "",
-          category: data.category || "",
-          subject: data.subject || "",
-          status: data.status || "جديد",
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString(),
-          messages: data.messages || [],
+      const fetchPromise = (async () => {
+        const snap = await getDocs(collection(firestoreDb!, "support_tickets"));
+        const list: SupportTicket[] = [];
+        snap.forEach((document) => {
+          const data = document.data();
+          list.push({
+            id: document.id,
+            courierName: data.courierName || "",
+            courierPhone: data.courierPhone || "",
+            category: data.category || "",
+            subject: data.subject || "",
+            status: data.status || "جديد",
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || new Date().toISOString(),
+            messages: data.messages || [],
+          });
         });
-      });
-      writeTicketsFile(list);
-      return list;
+        writeTicketsFile(list);
+        return list;
+      })();
+
+      // Prevent database connection failure from hanging tickets retrieval
+      return await Promise.race([
+        fetchPromise,
+        new Promise<SupportTicket[]>((resolve) => {
+          setTimeout(() => {
+            console.warn("⏰ Firestore tickets fetch timed out. Falling back to local tickets database.");
+            resolve(readTicketsFile());
+          }, 1500);
+        })
+      ]);
     } catch (error) {
       console.warn("Firestore support collection fetch failed, querying local fallback.", error);
       return readTicketsFile();
@@ -243,23 +273,28 @@ async function saveSupportTicket(ticket: SupportTicket) {
   }
   writeTicketsFile(localList);
 
-  // 2. Synchronize to Firestore
+  // 2. Synchronize to Firestore in the background
   if (firestoreDb) {
-    try {
-      await setDoc(doc(firestoreDb, "support_tickets", ticket.id), {
-        courierName: ticket.courierName,
-        courierPhone: ticket.courierPhone,
-        category: ticket.category,
-        subject: ticket.subject,
-        status: ticket.status,
-        createdAt: ticket.createdAt,
-        updatedAt: ticket.updatedAt,
-        messages: ticket.messages,
-      });
-      console.log(`Support ticket ${ticket.id} synchronized to Firestore.`);
-    } catch (e) {
-      console.error("Failed to sync ticket to Firestore:", e);
-    }
+    (async () => {
+      try {
+        await Promise.race([
+          setDoc(doc(firestoreDb!, "support_tickets", ticket.id), {
+            courierName: ticket.courierName,
+            courierPhone: ticket.courierPhone,
+            category: ticket.category,
+            subject: ticket.subject,
+            status: ticket.status,
+            createdAt: ticket.createdAt,
+            updatedAt: ticket.updatedAt,
+            messages: ticket.messages,
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1500))
+        ]);
+        console.log(`Support ticket ${ticket.id} synchronized to Firestore.`);
+      } catch (e) {
+        console.warn("Failed to sync ticket to Firestore (background):", e);
+      }
+    })();
   }
 }
 

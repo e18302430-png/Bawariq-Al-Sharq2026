@@ -117,7 +117,13 @@ export default function AdminDashboard() {
         body: JSON.stringify({ password }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonErr) {
+        throw new Error(`خطأ بالنظام: حدث استجابة غير متوقعة من الخادم. تفاصيل الاستجابة: ${text.substring(0, 150)}...`);
+      }
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || "عذراً، كلمة المرور غير صحيحة.");
