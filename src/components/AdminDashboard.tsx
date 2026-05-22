@@ -201,6 +201,40 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteCourier = async (courierId: string, courierName: string) => {
+    if (!window.confirm(`هل أنت متأكد تماماً من رغبتك في حذف الكابتن (${courierName}) نهائياً من النظام وقاعدة البيانات؟ لا يمكنك التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+    const pw = password || sessionStorage.getItem("admin_pw") || "";
+    setUpdatingId(courierId);
+    
+    try {
+      const response = await fetch("/api/admin/delete-courier", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          password: pw,
+          courierId
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setCouriers((prev) => prev.filter((c) => c.id !== courierId));
+        alert("تم حذف المندوب وسجلاته بالكامل من النظام بنجاح.");
+      } else {
+        alert(data.error || "عذراً، فشل حذف المندوب.");
+      }
+    } catch (e) {
+      console.error("Error deleting courier:", e);
+      alert("حدث خطأ في الاتصال بالشبكة لحذف المندوب.");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   useEffect(() => {
     const defaultPw = "bawariq2026";
     setPassword(defaultPw);
@@ -505,6 +539,136 @@ export default function AdminDashboard() {
             <Clock className="w-4 h-4 text-purple-400" />
           </div>
           <span className="text-lg font-black text-white font-mono arab-digits mt-2">{scheduledCount} كابتن</span>
+        </div>
+      </div>
+
+      {/* 📊 Dashboard Metrics (Sleek Real-time Graphical Section requested by user) */}
+      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-10"></div>
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-4">
+          <BarChart3 className="w-5 h-5 text-amber-500" />
+          <div>
+            <h3 className="text-sm font-extrabold text-white">إحصائيات المناديب والنشاط الميداني (Live Metrics)</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">رسوم بيانية تفصيلية للتوزيع الجغرافي والبرامج التشغيلية وحالات الانتساب المعتمدة</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Chart 1: Cities Distribution */}
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-4">
+            <h4 className="text-xs font-black text-white border-b border-slate-900 pb-2 flex items-center gap-1.5">
+              <span>📍 إجمالي المناديب حسب المدينة</span>
+            </h4>
+            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+              {(() => {
+                const citiesData = couriers.reduce<Record<string, number>>((acc, c) => {
+                  const city = c.city || "غير محدد";
+                  acc[city] = (acc[city] || 0) + 1;
+                  return acc;
+                }, {});
+
+                const sortedCities = (Object.entries(citiesData) as [string, number][]).sort((a, b) => b[1] - a[1]);
+                const maxCount = Math.max(...(Object.values(citiesData) as number[]), 1);
+
+                return sortedCities.map(([city, count]) => {
+                  const percent = (count / maxCount) * 100;
+                  return (
+                    <div key={city} className="space-y-1">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="font-bold text-slate-300">{city}</span>
+                        <span className="font-mono font-bold text-amber-400">{count} كابتن</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-amber-500 to-amber-600 rounded-full transition-all duration-1000" 
+                          style={{ width: `${percent}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+              {couriers.length === 0 && (
+                <div className="text-center text-[10px] text-slate-550 py-6">لا توجد بيانات متاحة للمدن</div>
+              )}
+            </div>
+          </div>
+
+          {/* Chart 2: Selected Apps Selection Rates */}
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-4">
+            <h4 className="text-xs font-black text-white border-b border-slate-900 pb-2 flex items-center gap-1.5">
+              <span>📱 توفير وتفعيل التطبيقات التشغيلية</span>
+            </h4>
+            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+              {(() => {
+                const appsData = couriers.reduce<Record<string, number>>((acc, c) => {
+                  if (Array.isArray(c.apps)) {
+                    c.apps.forEach(app => {
+                      acc[app] = (acc[app] || 0) + 1;
+                    });
+                  }
+                  return acc;
+                }, {});
+
+                const sortedApps = (Object.entries(appsData) as [string, number][]).sort((a, b) => b[1] - a[1]);
+                const maxCount = Math.max(...(Object.values(appsData) as number[]), 1);
+
+                return sortedApps.map(([app, count]) => {
+                  const percent = (count / maxCount) * 100;
+                  return (
+                    <div key={app} className="space-y-1">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="font-mono font-bold text-slate-350 uppercase">{app}</span>
+                        <span className="font-mono font-bold text-cyan-400">{count} كابتن</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-cyan-400 to-cyan-500 rounded-full transition-all duration-1000" 
+                          style={{ width: `${percent}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+              {couriers.length === 0 && (
+                <div className="text-center text-[10px] text-slate-550 py-6">لا توجد برامج مضافة</div>
+              )}
+            </div>
+          </div>
+
+          {/* Chart 3: Order Status Progress Gauge */}
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-4">
+            <h4 className="text-xs font-black text-white border-b border-slate-900 pb-2 flex items-center gap-1.5">
+              <span>🛡️ مراحل طلبات التوظيف الفعلي</span>
+            </h4>
+            <div className="space-y-3">
+              {[
+                { label: "جديد (بانتظار المقابلة للقبول السريع)", count: newCount, color: "from-amber-500 to-amber-600" },
+                { label: "تمت المقابلة (بانتظار تفعيل الكود والعهدة)", count: interviewedCount, color: "from-cyan-400 to-cyan-500" },
+                { label: "تم التفعيل (مباشر ومفعّل ميدانياً)", count: activatedCount, color: "from-emerald-400 to-emerald-500" }
+              ].map((item, idx) => {
+                const percent = couriers.length > 0 ? (item.count / couriers.length) * 100 : 0;
+                return (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-slate-300">{item.label}</span>
+                      <span className="font-mono font-bold text-slate-400">{item.count} ({Math.round(percent)}%)</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full bg-gradient-to-r ${item.color} rounded-full transition-all duration-1000`} 
+                        style={{ width: `${percent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })}
+              {couriers.length === 0 && (
+                <div className="text-center text-[10px] text-slate-550 py-6">لا يوجد ملفات بالفرز حالياً</div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1084,6 +1248,14 @@ export default function AdminDashboard() {
                             <option value="جديد">إرجاع لطلبات المراجعة</option>
                             <option value="تمت المقابلة">إرجاع لخانة تمت المقابلة</option>
                           </select>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCourier(c.id, c.name)}
+                            className="px-3 py-1 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-400 border border-rose-500/20 rounded text-[9px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer w-full"
+                          >
+                            <span>حذف من السجلات نهائياً</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1153,28 +1325,38 @@ export default function AdminDashboard() {
 
                       {/* Manual Status Column */}
                       <div className="text-center">
-                        <div className="inline-block relative">
-                          <select
-                            value={currentStatus}
-                            disabled={updatingId === c.id}
-                            onChange={(e) => handleStatusChange(c.id, e.target.value as any)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer focus:outline-none transition-all duration-200 text-center ${
-                              currentStatus === "جديد"
-                                ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
-                                : currentStatus === "تمت المقابلة"
-                                ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20"
-                                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-                            } ${updatingId === c.id ? "opacity-40 cursor-not-allowed" : ""}`}
+                        <div className="flex flex-col gap-2 items-center justify-center">
+                          <div className="inline-block relative">
+                            <select
+                              value={currentStatus}
+                              disabled={updatingId === c.id}
+                              onChange={(e) => handleStatusChange(c.id, e.target.value as any)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer focus:outline-none transition-all duration-200 text-center ${
+                                currentStatus === "جديد"
+                                  ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+                                  : currentStatus === "تمت المقابلة"
+                                  ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20"
+                                  : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                              } ${updatingId === c.id ? "opacity-40 cursor-not-allowed" : ""}`}
+                            >
+                              <option value="جديد" className="bg-slate-950 text-amber-400">جديد</option>
+                              <option value="تمت المقابلة" className="bg-slate-950 text-cyan-400">تمت المقابلة</option>
+                              <option value="تم التفعيل" className="bg-slate-950 text-emerald-400">تفعيل وتنشيط الحساب</option>
+                            </select>
+                            {updatingId === c.id && (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                              </div>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCourier(c.id, c.name)}
+                            className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-400 border border-rose-500/20 rounded text-[9px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer w-full"
                           >
-                            <option value="جديد" className="bg-slate-950 text-amber-400">جديد</option>
-                            <option value="تمت المقابلة" className="bg-slate-950 text-cyan-400">تمت المقابلة</option>
-                            <option value="تم التفعيل" className="bg-slate-950 text-emerald-400">تفعيل وتنشيط الحساب</option>
-                          </select>
-                          {updatingId === c.id && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                            </div>
-                          )}
+                            <span>حذف المندوب</span>
+                          </button>
                         </div>
                       </div>
 

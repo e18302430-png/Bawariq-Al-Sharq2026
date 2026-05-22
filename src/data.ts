@@ -93,5 +93,6 @@ export const OFFICE_INFO = {
   address: "طريق الملك فهد، حي الصحافة، برج رافال مكاتب بوارق الشرق، الدور الرابع",
   workingHours: "من السبت إلى الخميس: 09:00 صباحاً حتى 09:00 مساءً (الجمعة عطلة أسبوعية)",
   phone: "+966 50 000 0000",
-  locationCoords: { lat: 24.7886, lng: 46.6293 }
+  locationCoords: { lat: 24.7886, lng: 46.6293 },
+  mapsLink: "https://maps.app.goo.gl/X8CRgR1LkDc8XuZc6"
 };

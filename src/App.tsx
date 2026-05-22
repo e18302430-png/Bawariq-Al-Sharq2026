@@ -6,7 +6,7 @@ import AppointmentScheduler from "./components/AppointmentScheduler";
 import TicketSummary from "./components/TicketSummary";
 import AdminDashboard from "./components/AdminDashboard";
 import SupportPortal from "./components/SupportPortal";
-import { Sparkles, CheckCircle2, FileText, ArrowLeft, Trophy, LifeBuoy } from "lucide-react";
+import { Sparkles, CheckCircle2, FileText, ArrowLeft, Trophy, LifeBuoy, MapPin } from "lucide-react";
 
 export default function App() {
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -37,6 +37,39 @@ export default function App() {
   const [scheduledTime, setScheduledTime] = useState("");
   const [courierName, setCourierName] = useState("");
   const [footerClicks, setFooterClicks] = useState(0);
+
+  // Synchronize and restore courier authentication state from localStorage (persistent sessions requested by user)
+  useEffect(() => {
+    const savedStep = localStorage.getItem("bawariq_courier_step");
+    const savedId = localStorage.getItem("bawariq_courier_id");
+    const savedRegInfo = localStorage.getItem("bawariq_courier_reg_info");
+    const savedDate = localStorage.getItem("bawariq_courier_scheduled_date");
+    const savedTime = localStorage.getItem("bawariq_courier_scheduled_time");
+    const savedName = localStorage.getItem("bawariq_courier_name");
+
+    if (savedStep) {
+      setStep(Number(savedStep));
+    }
+    if (savedId) {
+      setCourierId(savedId);
+    }
+    if (savedRegInfo) {
+      try {
+        setRegistrationInfo(JSON.parse(savedRegInfo));
+      } catch (e) {
+        console.error("Failed to parse saved registration info", e);
+      }
+    }
+    if (savedDate) {
+      setScheduledDate(savedDate);
+    }
+    if (savedTime) {
+      setScheduledTime(savedTime);
+    }
+    if (savedName) {
+      setCourierName(savedName);
+    }
+  }, []);
 
   // Listening to URL hash changes to toggling administrative portal silently
   useEffect(() => {
@@ -87,12 +120,22 @@ export default function App() {
     setCourierName(info.name);
     setRegistrationInfo(info);
     setStep(2); // Move instantly to scheduling interview
+
+    localStorage.setItem("bawariq_courier_step", "2");
+    localStorage.setItem("bawariq_courier_id", id);
+    localStorage.setItem("bawariq_courier_reg_info", JSON.stringify(info));
+    localStorage.setItem("bawariq_courier_name", info.name);
+    localStorage.setItem("bawariq_courier_phone", info.phone); // auto-fill support form!
   };
 
   const handleScheduleSuccess = (date: string, time: string) => {
     setScheduledDate(date);
     setScheduledTime(time);
     setStep(3); // Move to ticket overview
+
+    localStorage.setItem("bawariq_courier_step", "3");
+    localStorage.setItem("bawariq_courier_scheduled_date", date);
+    localStorage.setItem("bawariq_courier_scheduled_time", time);
   };
 
   const handleReset = () => {
@@ -107,6 +150,14 @@ export default function App() {
     setScheduledDate("");
     setScheduledTime("");
     setStep(0); // Back to greetings
+
+    localStorage.removeItem("bawariq_courier_step");
+    localStorage.removeItem("bawariq_courier_id");
+    localStorage.removeItem("bawariq_courier_reg_info");
+    localStorage.removeItem("bawariq_courier_scheduled_date");
+    localStorage.removeItem("bawariq_courier_scheduled_time");
+    localStorage.removeItem("bawariq_courier_name");
+    localStorage.removeItem("bawariq_courier_phone");
   };
 
   return (
@@ -202,7 +253,7 @@ export default function App() {
                     </a>
                   </div>
 
-                  <div className="pt-2 flex justify-center items-center gap-6 text-slate-500 text-xs">
+                  <div className="pt-2 flex flex-wrap justify-center items-center gap-x-6 gap-y-2.5 text-slate-500 text-xs text-center">
                     <span className="flex items-center gap-1">
                       <Trophy className="w-4 h-4 text-amber-500/65" />
                       <span>تسويات فورية</span>
@@ -216,6 +267,18 @@ export default function App() {
                     <span className="flex items-center gap-1">
                       <FileText className="w-4 h-4 text-cyan-500/65" />
                       <span>تدريب مجاني شامل</span>
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-4 h-4 text-amber-500" />
+                      <a 
+                        href="https://maps.app.goo.gl/X8CRgR1LkDc8XuZc6" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-slate-400 hover:text-amber-400 font-bold underline decoration-slate-600 hover:decoration-amber-500 transition-all"
+                      >
+                        مقرنا الرئيسي بالرياض 📍
+                      </a>
                     </span>
                   </div>
                 </div>

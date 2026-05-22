@@ -1,5 +1,6 @@
 import React from "react";
-import { Check, Flame, MapPin, Calendar, Clock, Download, RefreshCw, Smartphone, ShieldCheck, Printer } from "lucide-react";
+import { Check, Flame, MapPin, Calendar, Clock, Download, RefreshCw, Smartphone, ShieldCheck, Printer, Navigation } from "lucide-react";
+import { OFFICE_INFO } from "../data";
 
 interface TicketSummaryProps {
   courierId: string;
@@ -15,6 +16,40 @@ interface TicketSummaryProps {
 }
 
 export default function TicketSummary({ courierId, info, scheduledDate, scheduledTime, onReset }: TicketSummaryProps) {
+  const [localStatus, setLocalStatus] = React.useState<string>("جديد");
+  const [localDate, setLocalDate] = React.useState<string>(scheduledDate);
+  const [localTime, setLocalTime] = React.useState<string>(scheduledTime);
+  const [appCode, setAppCode] = React.useState<string>("");
+  const [notes, setNotes] = React.useState<string>("");
+  const [loading, setLoading] = React.useState<boolean>(false);
+
+  const fetchLiveStatus = async () => {
+    if (!courierId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/couriers/${courierId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.courier) {
+          const c = data.courier;
+          setLocalStatus(c.status || "جديد");
+          if (c.interviewDate) setLocalDate(c.interviewDate);
+          if (c.interviewTime) setLocalTime(c.interviewTime);
+          if (c.appCourierCode) setAppCode(c.appCourierCode);
+          if (c.adminNotes) setNotes(c.adminNotes);
+        }
+      }
+    } catch (e) {
+      console.error("Error loading live courier status:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchLiveStatus();
+  }, [courierId]);
+
   const handlePrint = () => {
     window.print();
   };
@@ -52,6 +87,72 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
             </div>
           </div>
 
+          {/* Live Mobile Tracking Progress Indicator */}
+          <div className="bg-slate-900/50 border border-slate-800/60 rounded-xl p-4 space-y-4">
+            <div className="flex justify-between items-center flex-wrap gap-2">
+              <span className="text-xs text-slate-400 font-bold block">متابعة وحالة ملف الانتساب الخاص بك:</span>
+              <button 
+                onClick={fetchLiveStatus}
+                disabled={loading}
+                className="px-2 py-1 text-[9px] bg-slate-950 border border-slate-805 rounded hover:text-white flex items-center gap-1 cursor-pointer"
+                title="تحديث الحالة لحظياً"
+              >
+                <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin text-amber-500" : ""}`} />
+                <span>تحديث</span>
+              </button>
+            </div>
+            
+            {/* Visual Stepper */}
+            <div className="relative py-2 pb-6 border-b border-slate-900/50">
+              <div className="h-0.5 bg-slate-800 w-[80%] absolute top-4 left-1/2 -translate-x-1/2 rounded -z-1"></div>
+              <div className="flex justify-between relative z-10 text-[9px] sm:text-[10px]">
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className={`w-5.5 h-5.5 rounded-full flex items-center justify-center font-bold text-[10px] ${
+                    localStatus === "جديد" || localStatus === "تمت المقابلة" || localStatus === "تم التفعيل"
+                      ? "bg-amber-500 text-slate-950 ring-4 ring-amber-500/10" : "bg-slate-800 text-slate-550"
+                  }`}>1</span>
+                  <span className="font-extrabold text-slate-300">تقديم الطلب</span>
+                </div>
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className={`w-5.5 h-5.5 rounded-full flex items-center justify-center font-bold text-[10px] ${
+                    localStatus === "تمت المقابلة" || localStatus === "تم التفعيل"
+                      ? "bg-cyan-400 text-slate-950 ring-4 ring-cyan-400/10" : "bg-slate-800 text-slate-550"
+                  }`}>2</span>
+                  <span className="font-extrabold text-slate-300">المقابلة الوجاهية</span>
+                </div>
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className={`w-5.5 h-5.5 rounded-full flex items-center justify-center font-bold text-[10px] ${
+                    localStatus === "تم التفعيل"
+                      ? "bg-emerald-400 text-slate-950 ring-4 ring-emerald-400/10" : "bg-slate-800 text-slate-550"
+                  }`}>3</span>
+                  <span className="font-extrabold text-slate-300">التنشيط النهائي 🎉</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Admin notes section if present */}
+            {notes && (
+              <div className="p-3 bg-amber-500/5 border border-amber-500/15 rounded-lg text-[11px] text-amber-400 leading-relaxed">
+                <strong>📝 ملاحظات الإدارة والمراجعة:</strong> {notes}
+              </div>
+            )}
+
+            {/* Activated app code segment */}
+            {localStatus === "تم التفعيل" && appCode && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs leading-normal space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-300 font-bold border-b border-emerald-500/15 pb-1.5">
+                  <span>🚀 تم التفعيل وتعيين كودك الموحد بنجاح:</span>
+                  <span className="text-[10px] bg-emerald-500 text-slate-950 px-1.5 py-0.5 rounded uppercase font-black">الحالة: مفعّل</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400">كود المندوب بالبوابات الموحدة:</span>
+                  <span className="font-mono bg-slate-950 border border-emerald-500/30 px-3 py-1 rounded font-black tracking-wider text-emerald-400 text-sm select-all">{appCode}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-sans leading-relaxed">تفضل الآن بالتوجه لتطبيقات التوصيل (جاهز / هنقرستيشن) التي وافقنا لك عليها، وقم بتسجيل الدخول باستخدام كود بوارق لبدء التوزيع والاستلام دون عوائق.</p>
+              </div>
+            )}
+          </div>
+
           {/* Core Appointment Panel */}
           <div className="grid gap-4 sm:grid-cols-2 bg-slate-900/40 border border-slate-800 p-4 rounded-xl text-sm">
             <div className="flex gap-3 items-center">
@@ -60,7 +161,7 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
               </div>
               <div>
                 <span className="text-[10px] text-slate-500 block">تاريخ المقابلة المعتمد</span>
-                <span className="font-bold text-white text-xs md:text-sm">{scheduledDate}</span>
+                <span className="font-bold text-white text-xs md:text-sm">{localDate}</span>
               </div>
             </div>
 
@@ -70,7 +171,7 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
               </div>
               <div>
                 <span className="text-[10px] text-slate-500 block">فترة حضورك والقبول المباشر</span>
-                <span className="font-bold text-white text-xs md:text-sm">{scheduledTime}</span>
+                <span className="font-bold text-white text-xs md:text-sm">{localTime}</span>
               </div>
             </div>
           </div>
@@ -95,6 +196,26 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
                 {info.apps.map(id => id.toUpperCase()).join(", ")}
               </span>
             </div>
+          </div>
+
+          {/* Headquarters / Map link option on ticket */}
+          <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5">
+              <MapPin className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[10px] text-slate-500 block">عنوان المقابلة واستلام العهدة:</span>
+                <p className="text-slate-250 font-bold leading-normal text-slate-200">{OFFICE_INFO.address}</p>
+              </div>
+            </div>
+            <a
+              href={OFFICE_INFO.mapsLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-850 hover:border-slate-700 border border-slate-800 rounded-lg text-amber-400 font-extrabold flex items-center justify-center gap-1.5 transition-all text-[11px] shrink-0"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>افتح في خرائط Google 🗺️</span>
+            </a>
           </div>
 
           {/* Fake QR Check-In Graphic (represented brilliantly via high tech SVG to avoid dependencies) */}

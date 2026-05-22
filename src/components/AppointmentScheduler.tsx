@@ -143,12 +143,12 @@ export default function AppointmentScheduler({ courierId, courierName, onSuccess
                 <div>
                   <span className="text-[10px] text-slate-500 block">هل تستخدم نظام الـ GPS؟</span>
                   <a
-                    href="https://maps.google.com/?q=24.7886,46.6293"
+                    href={OFFICE_INFO.mapsLink || "https://maps.app.goo.gl/X8CRgR1LkDc8XuZc6"}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs font-bold text-slate-300 hover:text-amber-400 transition-colors underline"
                   >
-                    رابط خرائط جوجل للمقر الرئيسي بالرياض
+                    رابط خرائط جوجل للمقر الرئيسي ببوارق الشرق
                   </a>
                 </div>
               </div>

@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, setDoc, getDocs, Firestore } from "firebase/firestore";
+import { getFirestore, collection, doc, setDoc, getDocs, Firestore, deleteDoc } from "firebase/firestore";
 
 const app = express();
 const PORT = 3000;
@@ -220,6 +220,28 @@ async function saveCourier(courier: Courier) {
   }
 }
 
+async function deleteCourier(id: string) {
+  // 1. Delete from local JSON file
+  const localList = readCouriersFile();
+  const filtered = localList.filter((c) => c.id !== id);
+  writeCouriersFile(filtered);
+
+  // 2. Delete from Firestore in background
+  if (firestoreDb) {
+    (async () => {
+      try {
+        await Promise.race([
+          deleteDoc(doc(firestoreDb!, "couriers", id)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1500))
+        ]);
+        console.log(`Document ${id} successfully deleted from Cloud Firestore.`);
+      } catch (e) {
+        console.warn("Failed to delete document from Firestore (background).", e);
+      }
+    })();
+  }
+}
+
 async function readAllTickets(): Promise<SupportTicket[]> {
   if (firestoreDb) {
     try {
@@ -354,6 +376,23 @@ app.post("/api/schedule", async (req, res) => {
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: "فشل جدولة الموعد: " + error.message });
+  }
+});
+
+// 2.5 Get courier by id (for remote client-side status tracking / updates)
+app.get("/api/couriers/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const couriers = await readAllCouriers();
+    const courier = couriers.find((c) => c.id === id);
+
+    if (!courier) {
+      return res.status(404).json({ error: "طلب التقديم غير موجود" });
+    }
+
+    res.json({ success: true, courier });
+  } catch (error: any) {
+    res.status(500).json({ error: "فشل جلب الملف: " + error.message });
   }
 });
 
@@ -520,6 +559,30 @@ app.post("/api/admin/update-profile", async (req, res) => {
     res.json({ success: true, courier: couriers[index] });
   } catch (error: any) {
     res.status(500).json({ error: "فشل حفظ الملف التشغيلي الكامل: " + error.message });
+  }
+});
+
+// 6.5 Admin: Delete courier profile physically
+app.post("/api/admin/delete-courier", async (req, res) => {
+  try {
+    const { password, courierId } = req.body;
+    
+    if (!courierId) {
+      return res.status(400).json({ error: "يجب تحديد معرّف المندوب المطلوب حذفه" });
+    }
+
+    const couriers = await readAllCouriers();
+    const index = couriers.findIndex((c) => c.id === courierId);
+
+    if (index === -1) {
+      return res.status(404).json({ error: "الملف التشغيلي غير موجود بالفعل" });
+    }
+
+    await deleteCourier(courierId);
+
+    res.json({ success: true, message: "تم حذف المندوب بنجاح" });
+  } catch (error: any) {
+    res.status(500).json({ error: "فشل حذف المندوب: " + error.message });
   }
 });
 
