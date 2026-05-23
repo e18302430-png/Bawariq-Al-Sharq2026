@@ -15,6 +15,23 @@ app.use(express.json());
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "couriers.json");
 
+// Ensure data directory exists early
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Request and Crash Debug Logger
+const DEBUG_LOG_FILE = path.join(DATA_DIR, "debug.log");
+app.use((req, res, next) => {
+  const bodyCopy = { ...req.body };
+  if (bodyCopy.password) bodyCopy.password = "******";
+  const logMsg = `[${new Date().toISOString()}] ${req.method} ${req.url} - BODY: ${JSON.stringify(bodyCopy)}\n`;
+  try {
+    fs.appendFileSync(DEBUG_LOG_FILE, logMsg, "utf8");
+  } catch (err) {}
+  next();
+});
+
 // Define interface for Courier
 interface Courier {
   id: string;
@@ -40,6 +57,7 @@ interface SupportMessage {
   id: string;
   sender: "courier" | "admin";
   text: string;
+  imageUrl?: string;
   createdAt: string;
 }
 
@@ -592,7 +610,7 @@ app.post("/api/admin/delete-courier", async (req, res) => {
 // 7. Create Support Ticket
 app.post("/api/support/tickets", async (req, res) => {
   try {
-    const { name, phone, category, subject, message } = req.body;
+    const { name, phone, category, subject, message, imageUrl } = req.body;
 
     if (!name || !phone || !category || !subject || !message) {
       return res.status(400).json({ error: "الرجاء توفير جميع البيانات المطلوبة لفتح التذكرة" });
@@ -615,6 +633,7 @@ app.post("/api/support/tickets", async (req, res) => {
           id: "m-" + Date.now().toString(),
           sender: "courier",
           text: message,
+          imageUrl: imageUrl || undefined,
           createdAt: dateStr
         }
       ]
@@ -663,10 +682,14 @@ app.get("/api/support/tickets/:ticketId", async (req, res) => {
 app.post("/api/support/tickets/:ticketId/messages", async (req, res) => {
   try {
     const { ticketId } = req.params;
-    const { sender, text, password } = req.body;
+    const { sender, text, imageUrl } = req.body;
 
-    if (!text || !sender) {
-      return res.status(400).json({ error: "الرجاء كتابة نص الرسالة" });
+    if (!text && !imageUrl) {
+      return res.status(400).json({ error: "الرجاء كتابة نص الرسالة أو إرفاق صورة" });
+    }
+
+    if (!sender) {
+      return res.status(400).json({ error: "المرسل مفقود في الطلب" });
     }
 
     const tickets = await readAllTickets();
@@ -680,7 +703,8 @@ app.post("/api/support/tickets/:ticketId/messages", async (req, res) => {
     const newMessage: SupportMessage = {
       id: "m-" + Date.now().toString() + Math.random().toString(36).substring(2, 5),
       sender,
-      text,
+      text: text || "",
+      imageUrl: imageUrl || undefined,
       createdAt: nowStr
     };
 
@@ -735,6 +759,19 @@ app.post("/api/admin/tickets/update-status", async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Global JSON error handler to catch body-parser errors or other crashes
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const errMsg = `[ERROR] [${new Date().toISOString()}] ${req.method} ${req.url} - Error: ${err.message}\nStack: ${err.stack}\n\n`;
+  try {
+    fs.appendFileSync(path.join(process.cwd(), "data", "debug.log"), errMsg, "utf8");
+  } catch (logErr) {}
+  
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || "حدث خطأ داخلي في الخادم. الرجاء المحاولة مجدداً."
+  });
 });
 
 async function start() {

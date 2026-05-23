@@ -15,6 +15,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState("");
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [showPassword, setShowPassword] = useState(false);
+  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   
   // Tab controller: "applications" (new & interviews) vs "activated" (after office setup & activated) vs "support"
   const [activeTab, setActiveTab] = useState<"applications" | "activated" | "support">("applications");
@@ -1068,7 +1069,18 @@ export default function AdminDashboard() {
                                   {new Date(m.createdAt || m.time || Date.now()).toLocaleTimeString("ar-SA", { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </div>
-                              <p className="whitespace-pre-wrap">{m.text}</p>
+                              {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                              {m.imageUrl && (
+                                <div className="mt-2 rounded-lg border border-white/5 overflow-hidden max-w-full bg-slate-900">
+                                  <img 
+                                    src={m.imageUrl} 
+                                    alt="مرفق صورة" 
+                                    onClick={() => setZoomImageUrl(m.imageUrl)}
+                                    className="max-h-40 max-w-full object-cover rounded cursor-zoom-in hover:opacity-95 transition-all select-none mx-auto block" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              )}
                             </div>
                           );
                         })
@@ -1664,6 +1676,32 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Image Zoom Overlay Modal */}
+      {zoomImageUrl && (
+        <div 
+          className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setZoomImageUrl(null)}
+        >
+          <div className="absolute top-4 right-4 z-[101]">
+            <button 
+              onClick={() => setZoomImageUrl(null)}
+              className="p-2 bg-slate-905 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center animate-scale-up"
+              title="إغلاق التكبير"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-slate-800 shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+            <img 
+              src={zoomImageUrl} 
+              alt="صورة مكبرة للتفاصيل" 
+              className="max-w-full max-h-[85vh] object-contain block mx-auto"
+              referrerPolicy="no-referrer"
+            />
           </div>
         </div>
       )}

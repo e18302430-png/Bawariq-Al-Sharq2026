@@ -125,10 +125,16 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
       });
 
       let data;
-      try {
-        data = await response.json();
-      } catch (jsonErr) {
-        throw new Error("حدث خطأ في معالجة طلب التسجيل لدينا. يرجى مراجعة المدخلات والمحاولة مرة أخرى.");
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        try {
+          data = await response.json();
+        } catch (jsonErr: any) {
+          throw new Error("حدث خطأ في قراءة استجابة الخوادم. يرجى تكرار المحاولة.");
+        }
+      } else {
+        const text = await response.text();
+        throw new Error(`خطأ من الخادم (الحالة ${response.status}): ${text.substring(0, 150)}`);
       }
 
       if (!response.ok || !data.success) {

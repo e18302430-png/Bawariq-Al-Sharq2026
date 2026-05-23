@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MessageSquare, HelpCircle, Phone, ArrowRight, Send, RefreshCw, Layers, ShieldCheck, Clock, Search, ExternalLink, LifeBuoy, Zap, Sparkles, AlertTriangle, Check } from "lucide-react";
+import { MessageSquare, HelpCircle, Phone, ArrowRight, Send, RefreshCw, Layers, ShieldCheck, Clock, Search, ExternalLink, LifeBuoy, Zap, Sparkles, AlertTriangle, Check, Image, X } from "lucide-react";
 
 const QUICK_ISSUES = [
   {
@@ -75,6 +75,11 @@ export default function SupportPortal() {
   const [newMessageText, setNewMessageText] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [chatRefreshCooldown, setChatRefreshCooldown] = useState(false);
+  
+  // New States for Image Attachment
+  const [selectedChatImage, setSelectedChatImage] = useState<string | null>(null);
+  const [selectedNewTicketImage, setSelectedNewTicketImage] = useState<string | null>(null);
+  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -112,6 +117,37 @@ export default function SupportPortal() {
       osc.stop(audioCtx.currentTime + 0.4);
     } catch (e) {
       console.log("Audio play blocked by browser sandbox:", e);
+    }
+  };
+
+  // Attachment reader helpers
+  const handleChatImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert("حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 2 ميغابايت لمصلحة سرعة الإرسال.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedChatImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleNewTicketImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert("حجم الصورة كبير جداً، يرجى اختيار صورة أقل من 2 ميغابايت لمصلحة سرعة الإرسال.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedNewTicketImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -182,11 +218,24 @@ export default function SupportPortal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...ticketForm,
-          phone: normalizedPhone
+          phone: normalizedPhone,
+          imageUrl: selectedNewTicketImage || undefined
         })
       });
 
-      const data = await res.json();
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        try {
+          data = await res.json();
+        } catch (jsonErr) {
+          throw new Error("حدث خطأ في قراءة استجابة خوادم الدعم الفني.");
+        }
+      } else {
+        const text = await res.text();
+        throw new Error(`خطأ من الخادم (الحالة ${res.status}): ${text.substring(0, 150)}`);
+      }
+
       if (!res.ok || !data.success) {
         throw new Error(data.error || "خطأ أثناء محاولة فتح التذكرة");
       }
@@ -196,6 +245,7 @@ export default function SupportPortal() {
       localStorage.setItem("bawariq_courier_name", ticketForm.name);
 
       setCreatedTicketId(data.ticket.id);
+      setSelectedNewTicketImage(null); // Clear selected initial image
       setActiveTicket(data.ticket); // Jump straight into the live chat!
       setFoundTickets(prev => {
         if (prev.some(t => t.id === data.ticket.id)) return prev;
@@ -246,7 +296,7 @@ export default function SupportPortal() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessageText.trim() || !activeTicket) return;
+    if ((!newMessageText.trim() && !selectedChatImage) || !activeTicket) return;
 
     setIsSendingMessage(true);
     try {
@@ -255,7 +305,8 @@ export default function SupportPortal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sender: "courier",
-          text: newMessageText
+          text: newMessageText,
+          imageUrl: selectedChatImage || undefined
         })
       });
 
@@ -266,6 +317,7 @@ export default function SupportPortal() {
 
       setActiveTicket(data.ticket);
       setNewMessageText("");
+      setSelectedChatImage(null); // Clear selected chat image state
       // Update local listing instantly without loading flickering
       setFoundTickets(prev => prev.map(t => t.id === data.ticket.id ? data.ticket : t));
     } catch (err: any) {
@@ -429,7 +481,18 @@ export default function SupportPortal() {
                             <span>دعم بوارق اللوجستي المباشر</span>
                           </div>
                         )}
-                        <p className="whitespace-pre-line leading-relaxed tracking-wide">{m.text}</p>
+                        {m.text && <p className="whitespace-pre-line leading-relaxed tracking-wide">{m.text}</p>}
+                        {m.imageUrl && (
+                          <div className="mt-2 rounded-xl overflow-hidden border border-black/10 dark:border-white/10 max-w-full bg-slate-950/20">
+                            <img 
+                              src={m.imageUrl} 
+                              alt="عرض المرفق الصوري" 
+                              onClick={() => setZoomImageUrl(m.imageUrl)}
+                              className="w-full max-h-48 object-cover cursor-zoom-in hover:brightness-105 transition-all outline-none"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
                         <span className={`block text-[8px] text-left font-mono ${isAdmin ? "text-slate-500" : "text-slate-900/60 font-bold"}`}>
                           {new Date(m.createdAt).toLocaleTimeString("ar-SA", { hour: "numeric", minute: "2-digit" })}
                         </span>
@@ -466,7 +529,38 @@ export default function SupportPortal() {
                     ))}
                   </div>
 
-                  <form onSubmit={handleSendMessage} className="flex gap-2">
+                  {selectedChatImage && (
+                    <div className="p-2 border border-slate-850 rounded-xl bg-slate-950 flex items-center justify-between gap-3 animate-fade-in mb-2">
+                      <div className="flex items-center gap-2">
+                        <img src={selectedChatImage} alt="مرفق محدد" className="w-10 h-10 object-cover rounded-lg border border-slate-700" />
+                        <span className="text-[10px] text-slate-400 font-sans">صورة مرفقة جاهزة للإرسال</span>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => setSelectedChatImage(null)}
+                        className="p-1 bg-slate-900 hover:bg-slate-850 text-rose-400 hover:text-rose-350 rounded-md transition-colors cursor-pointer text-xs"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
+                    <input
+                      type="file"
+                      id="chat-photo-attachment"
+                      accept="image/*"
+                      onChange={handleChatImageChange}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="chat-photo-attachment"
+                      className="p-3 bg-slate-950 border border-slate-850 hover:border-cyan-500/40 text-slate-400 hover:text-cyan-400 rounded-xl transition-all cursor-pointer flex items-center justify-center shrink-0 active:scale-95 select-none"
+                      title="مرفق صوري"
+                    >
+                      <Image className="w-4 h-4" />
+                    </label>
+
                     <input
                       type="text"
                       value={newMessageText}
@@ -476,7 +570,7 @@ export default function SupportPortal() {
                     />
                     <button
                       type="submit"
-                      disabled={isSendingMessage || !newMessageText.trim()}
+                      disabled={isSendingMessage || (!newMessageText.trim() && !selectedChatImage)}
                       className="px-5 py-3 bg-cyan-500 hover:bg-cyan-600 font-extrabold text-slate-950 rounded-xl text-xs flex items-center gap-1.5 transition-all disabled:opacity-45 cursor-pointer shadow-md shadow-cyan-500/10 active:scale-[0.98]"
                     >
                       <span>إرسال</span>
@@ -662,6 +756,55 @@ export default function SupportPortal() {
                   />
                 </div>
 
+                {/* Optional Image Attachment for New Ticket */}
+                <div className="space-y-2">
+                  <label className="text-xs text-slate-400 font-bold block font-sans">إرفاق مستند أو لقطة شاشة (اختياري)</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="file"
+                      id="new-ticket-image-upload"
+                      accept="image/*"
+                      onChange={handleNewTicketImageChange}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="new-ticket-image-upload"
+                      className="px-4 py-2.5 bg-slate-950 border border-slate-800 hover:border-amber-500/40 text-slate-350 hover:text-amber-400 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 select-none active:scale-[0.98]"
+                    >
+                      <Image className="w-3.5 h-3.5" />
+                      <span>{selectedNewTicketImage ? "تغيير الصورة المرفقة" : "اختر صورة مرفقة 📷"}</span>
+                    </label>
+
+                    {selectedNewTicketImage && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNewTicketImage(null)}
+                        className="px-3 py-2 bg-slate-950/60 border border-slate-900 text-rose-400 hover:text-rose-350 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                      >
+                        إزالة المرفق
+                      </button>
+                    )}
+                  </div>
+
+                  {selectedNewTicketImage && (
+                    <div className="p-2.5 bg-slate-950/40 border border-slate-850 rounded-2xl inline-block animate-fade-in relative group max-w-[240px]">
+                      <img
+                        src={selectedNewTicketImage}
+                        alt="مرفق التذكرة الجديد"
+                        className="max-h-32 rounded-lg object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNewTicketImage(null)}
+                        className="absolute top-1.5 left-1.5 p-1 bg-red-600 hover:bg-red-700 text-white rounded-full transition-colors cursor-pointer"
+                        title="إزالة المرفق"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2">
                   <button
                     type="submit"
@@ -778,6 +921,32 @@ export default function SupportPortal() {
           )}
         </div>
       </div>
+
+      {/* Fullscreen Image Zoom Overlay Modal */}
+      {zoomImageUrl && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setZoomImageUrl(null)}
+        >
+          <div className="absolute top-4 right-4 z-10">
+            <button 
+              onClick={() => setZoomImageUrl(null)}
+              className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer flex items-center justify-center"
+              title="إغلاق التكبير"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-slate-800 shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+            <img 
+              src={zoomImageUrl} 
+              alt="صورة مكبرة للتفاصيل" 
+              className="max-w-full max-h-[85vh] object-contain block mx-auto"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
