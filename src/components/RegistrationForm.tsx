@@ -6,6 +6,17 @@ interface RegistrationFormProps {
   onSuccess: (courierId: string, info: { name: string; phone: string; city: string; apps: string[]; nationalId?: string }) => void;
 }
 
+function convertArabicNumerals(str: string): string {
+  const arabicRules = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
+  const persianRules = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
+  let result = str;
+  for (let i = 0; i < 10; i++) {
+    result = result.replace(new RegExp(arabicRules[i], "g"), String(i));
+    result = result.replace(new RegExp(persianRules[i], "g"), String(i));
+  }
+  return result;
+}
+
 export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -37,7 +48,8 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
   const validateSaudiPhone = (p: string) => {
     // Basic clean-up and Saudis validator
     // Matches 05xxxxxxxx or +9665xxxxxxxx
-    const clean = p.replace(/\s+/g, "");
+    const converted = convertArabicNumerals(p);
+    const clean = converted.replace(/\s+/g, "");
     const regex = /^(05|5|\+9665)[0-9]{8}$/;
     return regex.test(clean);
   };
@@ -45,6 +57,9 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    const normalizedPhone = convertArabicNumerals(phone).trim();
+    const normalizedNationalId = convertArabicNumerals(nationalId).trim();
 
     // Validation
     if (!name.trim()) {
@@ -57,7 +72,7 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
       return;
     }
 
-    if (!validateSaudiPhone(phone)) {
+    if (!validateSaudiPhone(normalizedPhone)) {
       setError("صيغة رقم الجوال غير صحيحة. يجب أن يبدأ بـ 05 ويتكون من 10 أرقام (مثال: 0512345678).");
       return;
     }
@@ -67,12 +82,12 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
       return /^[12][0-9]{9}$/.test(clean);
     };
 
-    if (!nationalId.trim()) {
+    if (!normalizedNationalId) {
       setError("الرجاء إدخال رقم الهوية الوطنية أو الإقامة.");
       return;
     }
 
-    if (!validateNationalId(nationalId)) {
+    if (!validateNationalId(normalizedNationalId)) {
       setError("رقم الهوية الوطنية أو الإقامة غير صحيح. يجب أن يتكون من 10 خانات ويبدأ بـ 1 للسعوديين أو 2 للمقيمين.");
       return;
     }
@@ -101,8 +116,8 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
         },
         body: JSON.stringify({
           name: name.trim(),
-          phone: phone.trim(),
-          nationalId: nationalId.trim(),
+          phone: normalizedPhone,
+          nationalId: normalizedNationalId,
           city: finalCity,
           experience: finalExperience,
           apps: selectedApps,
@@ -123,10 +138,10 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
       // Fire success callback
       onSuccess(data.courierId, {
         name: name.trim(),
-        phone: phone.trim(),
+        phone: normalizedPhone,
         city: finalCity,
         apps: selectedApps,
-        nationalId: nationalId.trim(),
+        nationalId: normalizedNationalId,
       });
     } catch (err: any) {
       setError(err.message || "حدث خطأ في الاتصال بالخادم الرئيسي. الرجاء المحاولة مجدداً.");
@@ -182,7 +197,7 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
                 type="tel"
                 required
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => setPhone(convertArabicNumerals(e.target.value))}
                 placeholder="05xxxxxxxx"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-11 py-3 text-sm text-left text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all font-mono tracking-wider"
                 dir="ltr"
@@ -202,7 +217,7 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
                 required
                 maxLength={10}
                 value={nationalId}
-                onChange={(e) => setNationalId(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => setNationalId(convertArabicNumerals(e.target.value).replace(/\D/g, ""))}
                 placeholder="أدخل 10 خانات (مثال: 1xxxxxxxxx)"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-11 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all font-mono tracking-wider"
               />

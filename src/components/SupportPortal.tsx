@@ -36,6 +36,17 @@ const QUICK_ISSUES = [
   }
 ];
 
+function convertArabicNumerals(str: string): string {
+  const arabicRules = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
+  const persianRules = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
+  let result = str;
+  for (let i = 0; i < 10; i++) {
+    result = result.replace(new RegExp(arabicRules[i], "g"), String(i));
+    result = result.replace(new RegExp(persianRules[i], "g"), String(i));
+  }
+  return result;
+}
+
 export default function SupportPortal() {
   const [activeTab, setActiveTab] = useState<"new-ticket" | "track-tickets">("new-ticket");
   const [selectedQuickId, setSelectedQuickId] = useState<string | null>(null);
@@ -157,7 +168,9 @@ export default function SupportPortal() {
     setSubmitError("");
     setIsSubmitting(true);
 
-    if (!ticketForm.name || !ticketForm.phone || !ticketForm.subject || !ticketForm.message) {
+    const normalizedPhone = convertArabicNumerals(ticketForm.phone).trim();
+
+    if (!ticketForm.name || !normalizedPhone || !ticketForm.subject || !ticketForm.message) {
       setSubmitError("الرجاء ملء كافة حقول الاستمارة لرفع التذكرة بنجاح");
       setIsSubmitting(false);
       return;
@@ -167,7 +180,10 @@ export default function SupportPortal() {
       const res = await fetch("/api/support/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(ticketForm)
+        body: JSON.stringify({
+          ...ticketForm,
+          phone: normalizedPhone
+        })
       });
 
       const data = await res.json();
@@ -195,7 +211,8 @@ export default function SupportPortal() {
   };
 
   const fetchTicketsByPhone = async (phoneToSearch: string) => {
-    if (!phoneToSearch) return;
+    const normalizedPhone = convertArabicNumerals(phoneToSearch).trim();
+    if (!normalizedPhone) return;
     setIsSearching(true);
     setSearchError("");
 
@@ -203,7 +220,7 @@ export default function SupportPortal() {
       const res = await fetch("/api/support/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phoneToSearch })
+        body: JSON.stringify({ phone: normalizedPhone })
       });
 
       const data = await res.json();
@@ -213,7 +230,7 @@ export default function SupportPortal() {
 
       setFoundTickets(data.tickets || []);
       if (data.tickets && data.tickets.length > 0) {
-        localStorage.setItem("bawariq_courier_phone", phoneToSearch);
+        localStorage.setItem("bawariq_courier_phone", normalizedPhone);
       }
     } catch (err: any) {
       setSearchError(err.message || "عذرًا، تعذر العثور على أي اتصالات برقم الجوال هذا");
@@ -595,7 +612,7 @@ export default function SupportPortal() {
                       type="tel"
                       required
                       value={ticketForm.phone}
-                      onChange={(e) => setTicketForm({...ticketForm, phone: e.target.value})}
+                      onChange={(e) => setTicketForm({...ticketForm, phone: convertArabicNumerals(e.target.value)})}
                       placeholder="مثال: 05XXXXXXXX"
                       className="w-full px-4 py-3 bg-slate-950 border border-slate-850 rounded-xl text-xs text-slate-100 font-mono tracking-wider focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all text-right"
                     />
@@ -682,7 +699,7 @@ export default function SupportPortal() {
                       type="tel"
                       required
                       value={searchPhone}
-                      onChange={(e) => setSearchPhone(e.target.value)}
+                      onChange={(e) => setSearchPhone(convertArabicNumerals(e.target.value))}
                       placeholder="مثال: 05XXXXXXXX"
                       className="w-full px-4 py-3 pr-10 bg-slate-950 border border-slate-850 rounded-xl text-xs text-slate-100 font-mono tracking-wider focus:outline-none focus:border-cyan-500 transition-colors text-right"
                     />

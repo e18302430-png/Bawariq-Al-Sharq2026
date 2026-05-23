@@ -325,7 +325,7 @@ async function saveSupportTicket(ticket: SupportTicket) {
 // 1. Register a courier
 app.post("/api/register", async (req, res) => {
   try {
-    const { name, phone, city, experience, apps } = req.body;
+    const { name, phone, city, experience, apps, nationalId } = req.body;
 
     if (!name || !phone || !city) {
       return res.status(400).json({ error: "الرجاء تعبئة جميع الحقول المطلوبة (الاسم، الجوال، المدينة)" });
@@ -342,6 +342,7 @@ app.post("/api/register", async (req, res) => {
       apps: Array.isArray(apps) ? apps : [],
       createdAt: new Date().toISOString(),
       status: "جديد", // Default status
+      nationalId: nationalId || "",
     };
 
     await saveCourier(newCourier);

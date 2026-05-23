@@ -6,23 +6,44 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-          "name": { "type": "string" },
-          "phone": { "type": "string" },
-          "city": { "type": "string" },
-          "experience": { "type": "string" },
-          "apps": { "type": "array" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "interviewDate": { "type": "string" },
-          "interviewTime": { "type": "string" },
-          "status": { "type": "string", "enum": ["جديد", "تمت المقابلة", "تم التفعيل"] }
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "experience": { "type": "string" },
+        "apps": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "interviewDate": { "type": "string" },
+        "interviewTime": { "type": "string" },
+        "status": { "type": "string", "enum": ["جديد", "تمت المقابلة", "تم التفعيل"] }
       },
       "required": ["name", "phone", "city", "createdAt"]
+    },
+    "support_tickets": {
+      "title": "Support Ticket",
+      "description": "Support tickets raised by couriers with correspondence history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courierName": { "type": "string" },
+        "courierPhone": { "type": "string" },
+        "category": { "type": "string" },
+        "subject": { "type": "string" },
+        "status": { "type": "string", "enum": ["جديد", "قيد المتابعة", "تم الرد", "مغلق"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "messages": { "type": "array" }
+      },
+      "required": ["courierName", "courierPhone", "category", "subject", "status"]
     }
   },
   "firestore": {
     "couriers/{courierId}": {
       "schema": "couriers",
       "description": "Collection of courier applications and verification data"
+    },
+    "support_tickets/{ticketId}": {
+      "schema": "support_tickets",
+      "description": "Collection of support tickets and communication chat history"
     }
   }
 }

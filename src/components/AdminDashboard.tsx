@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Courier } from "../types";
 import { 
   Lock, KeyRound, Loader2, Download, Search, MapPin, 
@@ -35,6 +35,9 @@ export default function AdminDashboard() {
   const [activationDate, setActivationDate] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const isInitialOpen = useRef(true);
 
   // Support ticket administration states
   const [supportTickets, setSupportTickets] = useState<any[]>([]);
@@ -281,6 +284,8 @@ export default function AdminDashboard() {
   };
 
   const openEditProfile = (courier: Courier) => {
+    isInitialOpen.current = true;
+    setAutoSaveStatus("idle");
     setEditingCourier(courier);
     setNationalId(courier.nationalId || "");
     setIban(courier.iban || "");
@@ -334,6 +339,59 @@ export default function AdminDashboard() {
       setSavingProfile(false);
     }
   };
+
+  // Debounced auto-save effect for courier profile details
+  useEffect(() => {
+    if (!editingCourier) {
+      setAutoSaveStatus("idle");
+      return;
+    }
+
+    if (isInitialOpen.current) {
+      isInitialOpen.current = false;
+      return;
+    }
+
+    setAutoSaveStatus("saving");
+    const pw = password || sessionStorage.getItem("admin_pw") || "";
+
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch("/api/admin/update-profile", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            password: pw,
+            courierId: editingCourier.id,
+            nationalId,
+            iban,
+            carPlate,
+            vehicleModel,
+            appCourierCode,
+            activationDate,
+            adminNotes,
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+          setCouriers((prev) =>
+            prev.map((c) => (c.id === editingCourier.id ? { ...c, ...data.courier } : c))
+          );
+          setAutoSaveStatus("saved");
+        } else {
+          setAutoSaveStatus("error");
+        }
+      } catch (err) {
+        console.error("Auto-save error:", err);
+        setAutoSaveStatus("error");
+      }
+    }, 1200); // Debounce delay of 1.2s
+
+    return () => clearTimeout(timer);
+  }, [editingCourier?.id, nationalId, iban, carPlate, vehicleModel, appCourierCode, activationDate, adminNotes]);
 
   // Extract unique cities and delivery apps for filters
   const uniqueCities = Array.from(new Set(couriers.map((c) => c.city)));
@@ -1432,7 +1490,27 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-white">إكمال وتقييم الملف التشغيلي الكامل للمندوب</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">المرشح: <span className="text-amber-400 font-bold">{editingCourier.name}</span> | جوال: {editingCourier.phone}</p>
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    <p className="text-xs text-slate-400">المرشح: <span className="text-amber-400 font-bold">{editingCourier.name}</span> | جوال: {editingCourier.phone}</p>
+                    {autoSaveStatus === "saving" && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-medium bg-amber-550/10 text-amber-400 border border-amber-500/20 rounded-md animate-pulse">
+                        <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                        <span>جاري الحفظ الآمن...</span>
+                      </span>
+                    )}
+                    {autoSaveStatus === "saved" && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-medium bg-emerald-550/10 text-emerald-400 border border-emerald-500/20 rounded-md animate-fade-in">
+                        <CheckCircle2 className="w-2.5 h-2.5" />
+                        <span>تم الحفظ والمزامنة ✓</span>
+                      </span>
+                    )}
+                    {autoSaveStatus === "error" && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-medium bg-rose-550/10 text-rose-400 border border-rose-500/20 rounded-md animate-bounce">
+                        <AlertCircle className="w-2.5 h-2.5" />
+                        <span>فشل الحفظ التلقائي!</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <button

@@ -27,5 +27,10 @@ service cloud.firestore {
     match /couriers/{courierId} {
       allow read, write: if true;
     }
+
+    // Collection support_tickets rule
+    match /support_tickets/{ticketId} {
+      allow read, write: if true;
+    }
   }
 }
