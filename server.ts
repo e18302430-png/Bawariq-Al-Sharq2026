@@ -205,36 +205,34 @@ async function saveCourier(courier: Courier) {
   }
   writeCouriersFile(localList);
 
-  // 2. Write to Firestore permanently in background without blocking the HTTP response
+  // 2. Write to Firestore permanently
   if (firestoreDb) {
-    (async () => {
-      try {
-        await Promise.race([
-          setDoc(doc(firestoreDb!, "couriers", courier.id), {
-            name: courier.name,
-            phone: courier.phone,
-            city: courier.city,
-            experience: courier.experience,
-            apps: courier.apps,
-            createdAt: courier.createdAt,
-            status: courier.status,
-            interviewDate: courier.interviewDate || "",
-            interviewTime: courier.interviewTime || "",
-            nationalId: courier.nationalId || "",
-            iban: courier.iban || "",
-            carPlate: courier.carPlate || "",
-            vehicleModel: courier.vehicleModel || "",
-            appCourierCode: courier.appCourierCode || "",
-            activationDate: courier.activationDate || "",
-            adminNotes: courier.adminNotes || "",
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1500))
-        ]);
-        console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore.`);
-      } catch (e) {
-        console.warn("Failed to synchronize to Firestore (background), stored locally.", e);
-      }
-    })();
+    try {
+      await Promise.race([
+        setDoc(doc(firestoreDb!, "couriers", courier.id), {
+          name: courier.name,
+          phone: courier.phone,
+          city: courier.city,
+          experience: courier.experience,
+          apps: courier.apps,
+          createdAt: courier.createdAt,
+          status: courier.status,
+          interviewDate: courier.interviewDate || "",
+          interviewTime: courier.interviewTime || "",
+          nationalId: courier.nationalId || "",
+          iban: courier.iban || "",
+          carPlate: courier.carPlate || "",
+          vehicleModel: courier.vehicleModel || "",
+          appCourierCode: courier.appCourierCode || "",
+          activationDate: courier.activationDate || "",
+          adminNotes: courier.adminNotes || "",
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 4000))
+      ]);
+      console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore.`);
+    } catch (e) {
+      console.warn("Failed to synchronize to Firestore, stored locally.", e);
+    }
   }
 }
 
@@ -244,19 +242,17 @@ async function deleteCourier(id: string) {
   const filtered = localList.filter((c) => c.id !== id);
   writeCouriersFile(filtered);
 
-  // 2. Delete from Firestore in background
+  // 2. Delete from Firestore
   if (firestoreDb) {
-    (async () => {
-      try {
-        await Promise.race([
-          deleteDoc(doc(firestoreDb!, "couriers", id)),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1500))
-        ]);
-        console.log(`Document ${id} successfully deleted from Cloud Firestore.`);
-      } catch (e) {
-        console.warn("Failed to delete document from Firestore (background).", e);
-      }
-    })();
+    try {
+      await Promise.race([
+        deleteDoc(doc(firestoreDb!, "couriers", id)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 4000))
+      ]);
+      console.log(`Document ${id} successfully deleted from Cloud Firestore.`);
+    } catch (e) {
+      console.warn("Failed to delete document from Firestore.", e);
+    }
   }
 }
 
@@ -313,28 +309,26 @@ async function saveSupportTicket(ticket: SupportTicket) {
   }
   writeTicketsFile(localList);
 
-  // 2. Synchronize to Firestore in the background
+  // 2. Synchronize to Firestore
   if (firestoreDb) {
-    (async () => {
-      try {
-        await Promise.race([
-          setDoc(doc(firestoreDb!, "support_tickets", ticket.id), {
-            courierName: ticket.courierName,
-            courierPhone: ticket.courierPhone,
-            category: ticket.category,
-            subject: ticket.subject,
-            status: ticket.status,
-            createdAt: ticket.createdAt,
-            updatedAt: ticket.updatedAt,
-            messages: ticket.messages,
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1500))
-        ]);
-        console.log(`Support ticket ${ticket.id} synchronized to Firestore.`);
-      } catch (e) {
-        console.warn("Failed to sync ticket to Firestore (background):", e);
-      }
-    })();
+    try {
+      await Promise.race([
+        setDoc(doc(firestoreDb!, "support_tickets", ticket.id), {
+          courierName: ticket.courierName,
+          courierPhone: ticket.courierPhone,
+          category: ticket.category,
+          subject: ticket.subject,
+          status: ticket.status,
+          createdAt: ticket.createdAt,
+          updatedAt: ticket.updatedAt,
+          messages: ticket.messages,
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 4000))
+      ]);
+      console.log(`Support ticket ${ticket.id} synchronized to Firestore.`);
+    } catch (e) {
+      console.warn("Failed to sync ticket to Firestore:", e);
+    }
   }
 }
 
