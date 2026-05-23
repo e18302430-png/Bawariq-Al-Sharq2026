@@ -2,8 +2,6 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, doc, setDoc, getDocs, Firestore, deleteDoc } from "firebase/firestore";
 
 const app = express();
 const PORT = 3000;
@@ -11,17 +9,29 @@ const PORT = 3000;
 // Enable JSON parsing
 app.use(express.json());
 
-// Path to store local backup courier registrations
-const DATA_DIR = path.join(process.cwd(), "data");
+// Detect serverless environment to direct backups to standard writable directory
+const isServerless = !!process.env.VERCEL || !!process.env.LAMBDA_TASK_ROOT || !!process.env.AWS_EXECUTION_ENV;
+const DATA_DIR = isServerless ? "/tmp" : path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "couriers.json");
+const TICKETS_FILE = path.join(DATA_DIR, "support_tickets.json");
+const DEBUG_LOG_FILE = path.join(DATA_DIR, "debug.log");
 
-// Ensure data directory exists early
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure data directory exists early and defensively
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
+  }
+  if (!fs.existsSync(TICKETS_FILE)) {
+    fs.writeFileSync(TICKETS_FILE, JSON.stringify([], null, 2), "utf8");
+  }
+} catch (e) {
+  console.warn("⚠️ DATA_DIR initialization caught expected read-only or permission warning:", e);
 }
 
 // Request and Crash Debug Logger
-const DEBUG_LOG_FILE = path.join(DATA_DIR, "debug.log");
 app.use((req, res, next) => {
   const bodyCopy = { ...req.body };
   if (bodyCopy.password) bodyCopy.password = "******";
@@ -73,33 +83,89 @@ interface SupportTicket {
   messages: SupportMessage[];
 }
 
-// Ensure data directory and file backup exist
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
+// Map Firestore Typed Fields recursively for REST API serialization
+function toFirestoreValue(val: any): any {
+  if (val === null || val === undefined) {
+    return { nullValue: null };
+  }
+  if (typeof val === "boolean") {
+    return { booleanValue: val };
+  }
+  if (typeof val === "number") {
+    if (Number.isInteger(val)) {
+      return { integerValue: String(val) };
+    }
+    return { doubleValue: val };
+  }
+  if (typeof val === "string") {
+    return { stringValue: val };
+  }
+  if (Array.isArray(val)) {
+    return {
+      arrayValue: {
+        values: val.map(toFirestoreValue)
+      }
+    };
+  }
+  if (typeof val === "object") {
+    const fields: any = {};
+    for (const k of Object.keys(val)) {
+      fields[k] = toFirestoreValue(val[k]);
+    }
+    return {
+      mapValue: {
+        fields
+      }
+    };
+  }
+  return { stringValue: String(val) };
 }
 
-const TICKETS_FILE = path.join(DATA_DIR, "support_tickets.json");
-if (!fs.existsSync(TICKETS_FILE)) {
-  fs.writeFileSync(TICKETS_FILE, JSON.stringify([], null, 2), "utf8");
+// Parse Firestore Typed Fields recursively for REST API deserialization
+function fromFirestoreValue(fVal: any): any {
+  if (!fVal) return null;
+  if ("nullValue" in fVal) return null;
+  if ("booleanValue" in fVal) return fVal.booleanValue;
+  if ("integerValue" in fVal) return parseInt(fVal.integerValue, 10);
+  if ("doubleValue" in fVal) return fVal.doubleValue;
+  if ("stringValue" in fVal) return fVal.stringValue;
+  if ("arrayValue" in fVal) {
+    const values = fVal.arrayValue.values || [];
+    return values.map(fromFirestoreValue);
+  }
+  if ("mapValue" in fVal) {
+    const fields = fVal.mapValue.fields || {};
+    const res: any = {};
+    for (const k of Object.keys(fields)) {
+      res[k] = fromFirestoreValue(fields[k]);
+    }
+    return res;
+  }
+  return null;
 }
 
-// Lazy connect to Cloud Firestore (cross-platform client connection using API key)
-let firestoreDb: Firestore | null = null;
+// Config Firestore Rest Credentials
+let firestoreRest: {
+  projectId: string;
+  databaseId: string;
+  apiKey: string;
+} | null = null;
+
 try {
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(firebaseConfigPath)) {
     const config = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
-    const firebaseApp = initializeApp(config);
-    firestoreDb = getFirestore(firebaseApp, config.firestoreDatabaseId);
-    console.log(`⚡ Firebase Web Client successfully initiated on server! Project: ${config.projectId}, DB: ${config.firestoreDatabaseId}`);
+    firestoreRest = {
+      projectId: config.projectId,
+      databaseId: config.firestoreDatabaseId || "(default)",
+      apiKey: config.apiKey
+    };
+    console.log(`⚡ Firestore REST Client configured. Project: ${config.projectId}, DB: ${config.firestoreDatabaseId}`);
   } else {
     console.warn("⚠️ No firebase-applet-config.json found. Running on fallback local file database.");
   }
 } catch (e) {
-  console.warn("⚠️ Firestore native initialization deferred, running on fallback local file database.", e);
+  console.warn("⚠️ Firestore REST initialization deferred, running on fallback local file database.", e);
 }
 
 // Read Support Tickets Helper (From local JSON file)
@@ -144,50 +210,79 @@ function writeCouriersFile(couriers: Courier[]) {
   }
 }
 
-async function readAllCouriers(): Promise<Courier[]> {
-  if (firestoreDb) {
-    try {
-      const fetchPromise = (async () => {
-        const snap = await getDocs(collection(firestoreDb!, "couriers"));
-        const list: Courier[] = [];
-        snap.forEach((document) => {
-          const data = document.data();
-          list.push({
-            id: document.id,
-            name: data.name || "",
-            phone: data.phone || "",
-            city: data.city || "",
-            experience: data.experience || "",
-            apps: data.apps || [],
-            createdAt: data.createdAt || new Date().toISOString(),
-            status: data.status || "جديد",
-            interviewDate: data.interviewDate,
-            interviewTime: data.interviewTime,
-            nationalId: data.nationalId || "",
-            iban: data.iban || "",
-            carPlate: data.carPlate || "",
-            vehicleModel: data.vehicleModel || "",
-            appCourierCode: data.appCourierCode || "",
-            activationDate: data.activationDate || "",
-            adminNotes: data.adminNotes || "",
-          } as Courier);
-        });
-        writeCouriersFile(list);
-        return list;
-      })();
+// Custom fast HTTP fetcher with abort timeout to avoid hanging serverless threads
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
-      // Prevent database connection failure from hanging the client's request
-      return await Promise.race([
-        fetchPromise,
-        new Promise<Courier[]>((resolve) => {
-          setTimeout(() => {
-            console.warn("⏰ Firestore courier fetch timed out. Falling back to local file JSON database.");
-            resolve(readCouriersFile());
-          }, 1500);
-        })
-      ]);
+async function readAllCouriers(): Promise<Courier[]> {
+  if (firestoreRest) {
+    try {
+      const { projectId, databaseId, apiKey } = firestoreRest;
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents:runQuery?key=${apiKey}`;
+      const payload = {
+        structuredQuery: {
+          from: [{ collectionId: "couriers" }]
+        }
+      };
+      const res = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }, 3500);
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`REST Fetch Error Status: ${res.status} - Response: ${errText}`);
+      }
+      
+      const data = await res.json();
+      const list: Courier[] = [];
+      const queryResults = Array.isArray(data) ? data : [];
+
+      for (const item of queryResults) {
+        if (!item.document) continue;
+        const d = item.document;
+        const id = d.name.split("/").pop() || "";
+        const fields = d.fields || {};
+        const courierData: any = {};
+        for (const key of Object.keys(fields)) {
+          courierData[key] = fromFirestoreValue(fields[key]);
+        }
+        list.push({
+          id,
+          name: courierData.name || "",
+          phone: courierData.phone || "",
+          city: courierData.city || "",
+          experience: courierData.experience || "",
+          apps: courierData.apps || [],
+          createdAt: courierData.createdAt || new Date().toISOString(),
+          status: courierData.status || "جديد",
+          interviewDate: courierData.interviewDate,
+          interviewTime: courierData.interviewTime,
+          nationalId: courierData.nationalId || "",
+          iban: courierData.iban || "",
+          carPlate: courierData.carPlate || "",
+          vehicleModel: courierData.vehicleModel || "",
+          appCourierCode: courierData.appCourierCode || "",
+          activationDate: courierData.activationDate || "",
+          adminNotes: courierData.adminNotes || "",
+        } as Courier);
+      }
+      writeCouriersFile(list);
+      return list;
     } catch (error) {
-      console.warn("Firestore collection fetch failed, querying local JSON fallback.", error);
+      console.warn("Firestore collection fetch failed (REST), querying local JSON fallback.", error);
       return readCouriersFile();
     }
   }
@@ -206,32 +301,48 @@ async function saveCourier(courier: Courier) {
   writeCouriersFile(localList);
 
   // 2. Write to Firestore permanently
-  if (firestoreDb) {
+  if (firestoreRest) {
     try {
-      await Promise.race([
-        setDoc(doc(firestoreDb!, "couriers", courier.id), {
-          name: courier.name,
-          phone: courier.phone,
-          city: courier.city,
-          experience: courier.experience,
-          apps: courier.apps,
-          createdAt: courier.createdAt,
-          status: courier.status,
-          interviewDate: courier.interviewDate || "",
-          interviewTime: courier.interviewTime || "",
-          nationalId: courier.nationalId || "",
-          iban: courier.iban || "",
-          carPlate: courier.carPlate || "",
-          vehicleModel: courier.vehicleModel || "",
-          appCourierCode: courier.appCourierCode || "",
-          activationDate: courier.activationDate || "",
-          adminNotes: courier.adminNotes || "",
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 4000))
-      ]);
-      console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore.`);
+      const { projectId, databaseId, apiKey } = firestoreRest;
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/couriers/${courier.id}?key=${apiKey}`;
+      
+      const fields: any = {};
+      const rawObj: any = {
+        name: courier.name,
+        phone: courier.phone,
+        city: courier.city,
+        experience: courier.experience,
+        apps: courier.apps,
+        createdAt: courier.createdAt,
+        status: courier.status,
+        interviewDate: courier.interviewDate || "",
+        interviewTime: courier.interviewTime || "",
+        nationalId: courier.nationalId || "",
+        iban: courier.iban || "",
+        carPlate: courier.carPlate || "",
+        vehicleModel: courier.vehicleModel || "",
+        appCourierCode: courier.appCourierCode || "",
+        activationDate: courier.activationDate || "",
+        adminNotes: courier.adminNotes || "",
+      };
+
+      for (const key of Object.keys(rawObj)) {
+        fields[key] = toFirestoreValue(rawObj[key]);
+      }
+
+      const res = await fetchWithTimeout(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields })
+      }, 3500);
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`REST Patch status: ${res.status} - ${errText}`);
+      }
+      console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore REST.`);
     } catch (e) {
-      console.warn("Failed to synchronize to Firestore, stored locally.", e);
+      console.warn("Failed to synchronize to Firestore REST, stored locally.", e);
     }
   }
 }
@@ -243,55 +354,71 @@ async function deleteCourier(id: string) {
   writeCouriersFile(filtered);
 
   // 2. Delete from Firestore
-  if (firestoreDb) {
+  if (firestoreRest) {
     try {
-      await Promise.race([
-        deleteDoc(doc(firestoreDb!, "couriers", id)),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 4000))
-      ]);
-      console.log(`Document ${id} successfully deleted from Cloud Firestore.`);
+      const { projectId, databaseId, apiKey } = firestoreRest;
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/couriers/${id}?key=${apiKey}`;
+      const res = await fetchWithTimeout(url, { method: "DELETE" }, 3500);
+      if (!res.ok) {
+        throw new Error(`REST Delete Error Status: ${res.status}`);
+      }
+      console.log(`Document ${id} successfully deleted from Cloud Firestore REST.`);
     } catch (e) {
-      console.warn("Failed to delete document from Firestore.", e);
+      console.warn("Failed to delete document from Firestore REST.", e);
     }
   }
 }
 
 async function readAllTickets(): Promise<SupportTicket[]> {
-  if (firestoreDb) {
+  if (firestoreRest) {
     try {
-      const fetchPromise = (async () => {
-        const snap = await getDocs(collection(firestoreDb!, "support_tickets"));
-        const list: SupportTicket[] = [];
-        snap.forEach((document) => {
-          const data = document.data();
-          list.push({
-            id: document.id,
-            courierName: data.courierName || "",
-            courierPhone: data.courierPhone || "",
-            category: data.category || "",
-            subject: data.subject || "",
-            status: data.status || "جديد",
-            createdAt: data.createdAt || new Date().toISOString(),
-            updatedAt: data.updatedAt || new Date().toISOString(),
-            messages: data.messages || [],
-          });
-        });
-        writeTicketsFile(list);
-        return list;
-      })();
+      const { projectId, databaseId, apiKey } = firestoreRest;
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents:runQuery?key=${apiKey}`;
+      const payload = {
+        structuredQuery: {
+          from: [{ collectionId: "support_tickets" }]
+        }
+      };
+      const res = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }, 3500);
 
-      // Prevent database connection failure from hanging tickets retrieval
-      return await Promise.race([
-        fetchPromise,
-        new Promise<SupportTicket[]>((resolve) => {
-          setTimeout(() => {
-            console.warn("⏰ Firestore tickets fetch timed out. Falling back to local tickets database.");
-            resolve(readTicketsFile());
-          }, 1500);
-        })
-      ]);
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`REST Tickets Fetch Error Status: ${res.status} - Response: ${errText}`);
+      }
+      
+      const data = await res.json();
+      const list: SupportTicket[] = [];
+      const queryResults = Array.isArray(data) ? data : [];
+
+      for (const item of queryResults) {
+        if (!item.document) continue;
+        const d = item.document;
+        const id = d.name.split("/").pop() || "";
+        const fields = d.fields || {};
+        const ticketData: any = {};
+        for (const key of Object.keys(fields)) {
+          ticketData[key] = fromFirestoreValue(fields[key]);
+        }
+        list.push({
+          id,
+          courierName: ticketData.courierName || "",
+          courierPhone: ticketData.courierPhone || "",
+          category: ticketData.category || "",
+          subject: ticketData.subject || "",
+          status: ticketData.status || "جديد",
+          createdAt: ticketData.createdAt || new Date().toISOString(),
+          updatedAt: ticketData.updatedAt || new Date().toISOString(),
+          messages: ticketData.messages || [],
+        });
+      }
+      writeTicketsFile(list);
+      return list;
     } catch (error) {
-      console.warn("Firestore support collection fetch failed, querying local fallback.", error);
+      console.warn("Firestore support collection fetch failed (REST), querying local fallback.", error);
       return readTicketsFile();
     }
   }
@@ -310,24 +437,40 @@ async function saveSupportTicket(ticket: SupportTicket) {
   writeTicketsFile(localList);
 
   // 2. Synchronize to Firestore
-  if (firestoreDb) {
+  if (firestoreRest) {
     try {
-      await Promise.race([
-        setDoc(doc(firestoreDb!, "support_tickets", ticket.id), {
-          courierName: ticket.courierName,
-          courierPhone: ticket.courierPhone,
-          category: ticket.category,
-          subject: ticket.subject,
-          status: ticket.status,
-          createdAt: ticket.createdAt,
-          updatedAt: ticket.updatedAt,
-          messages: ticket.messages,
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 4000))
-      ]);
-      console.log(`Support ticket ${ticket.id} synchronized to Firestore.`);
+      const { projectId, databaseId, apiKey } = firestoreRest;
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/support_tickets/${ticket.id}?key=${apiKey}`;
+      
+      const fields: any = {};
+      const rawObj: any = {
+        courierName: ticket.courierName,
+        courierPhone: ticket.courierPhone,
+        category: ticket.category,
+        subject: ticket.subject,
+        status: ticket.status,
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt,
+        messages: ticket.messages,
+      };
+
+      for (const key of Object.keys(rawObj)) {
+        fields[key] = toFirestoreValue(rawObj[key]);
+      }
+
+      const res = await fetchWithTimeout(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields })
+      }, 3500);
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`REST Ticket Patch Status: ${res.status} - ${errText}`);
+      }
+      console.log(`Support ticket ${ticket.id} synchronized to Firestore REST.`);
     } catch (e) {
-      console.warn("Failed to sync ticket to Firestore:", e);
+      console.warn("Failed to sync ticket to Firestore (REST):", e);
     }
   }
 }
