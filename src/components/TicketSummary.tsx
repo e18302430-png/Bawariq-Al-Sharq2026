@@ -89,7 +89,7 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
             </div>
             <div className="text-left font-mono">
               <span className="text-[10px] text-slate-500 block">كود الطلب الأصلي:</span>
-              <span className="text-xs font-bold text-slate-300">#{courierId.substring(0, 8).toUpperCase()}</span>
+              <span className="text-xs font-bold text-slate-300">#{(courierId || "").substring(0, 8).toUpperCase()}</span>
             </div>
           </div>
 

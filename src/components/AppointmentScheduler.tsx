@@ -106,7 +106,7 @@ export default function AppointmentScheduler({ courierId, courierName, onSuccess
           <span>أهلاً بك يا كابتن {courierName}، تم توثيق بياناتك بنجاح!</span>
         </h3>
         <p className="text-sm text-slate-300">
-          طلبك مسجل الآن بالنظام برقم تسلسلي مؤقت <strong className="text-amber-400 font-mono">#{courierId.substring(0, 6).toUpperCase()}</strong>.
+          طلبك مسجل الآن بالنظام برقم تسلسلي مؤقت <strong className="text-amber-400 font-mono">#{(courierId || "").substring(0, 6).toUpperCase()}</strong>.
         </p>
         <p className="text-xs text-slate-400 leading-relaxed pt-1">
           لكي نقوم بالموافقة الفورية وتفعيل حساباتك على تطبيقات التوصيل، يرجى استكمال خطوتك الأخيرة بتحديد موعد مناسب لك بالحضور شخصياً إلى مقر مكتب بوارق الشرق لاستلام الحسابات وتصريح العمل وحزمة المناديب.

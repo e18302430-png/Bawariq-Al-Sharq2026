@@ -901,7 +901,7 @@ app.post("/api/admin/tickets/update-status", async (req, res) => {
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   const errMsg = `[ERROR] [${new Date().toISOString()}] ${req.method} ${req.url} - Error: ${err.message}\nStack: ${err.stack}\n\n`;
   try {
-    fs.appendFileSync(path.join(process.cwd(), "data", "debug.log"), errMsg, "utf8");
+    fs.appendFileSync(DEBUG_LOG_FILE, errMsg, "utf8");
   } catch (logErr) {}
   
   res.status(err.status || 500).json({
