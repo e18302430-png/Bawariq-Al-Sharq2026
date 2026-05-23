@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 
 const app = express();
 const PORT = 3000;
@@ -912,14 +911,15 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 async function start() {
-  // If running in Vercel Serverless environment, don't boot standalone listeners
-  if (process.env.VERCEL === "1") {
-    console.log("⚡ Running on Vercel Serverless Environment. Standalone listeners bypassed.");
+  // If running in a Serverless environment, don't boot standalone listeners
+  if (isServerless) {
+    console.log("⚡ Running on Serverless Environment. Standalone listeners bypassed.");
     return;
   }
 
   // Vite integration
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
