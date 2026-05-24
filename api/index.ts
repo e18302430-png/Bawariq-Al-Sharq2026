@@ -1,5 +1,4 @@
-import express from "express";
-import serverless from "serverless-http";
 import app from "../dist/server.cjs";
+import serverless from "serverless-http";
 
 export default serverless(app);
