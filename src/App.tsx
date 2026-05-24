@@ -223,7 +223,7 @@ export default function App() {
                   </div>
 
                   <h1 className="text-4xl md:text-6xl font-black text-white leading-tight">
-                    بوابتك الكبرى للعمل الحر كـ <span className="text-amber-400">مندوب توصيل محترف</span>
+                    بوابتك الكبرى للعمل كـ <span className="text-amber-400">مندوب توصيل محترف</span>
                   </h1>
 
                   <p className="text-sm md:text-base text-slate-400 max-w-2xl mx-auto leading-relaxed">
