@@ -274,12 +274,12 @@ export default function App() {
                     <span className="flex items-center gap-1">
                       <MapPin className="w-4 h-4 text-amber-500" />
                       <a 
-                        href="https://maps.app.goo.gl/X8CRgR1LkDc8XuZc6" 
+                        href="https://maps.google.com/?q=Dammam+Abu+Bakr+Al+Siddiq+Road+Business+Tower" 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="text-slate-400 hover:text-amber-400 font-bold underline decoration-slate-600 hover:decoration-amber-500 transition-all"
                       >
-                        مقرنا الرئيسي بالرياض 📍
+                        مقرنا الرئيسي بالدمام 📍
                       </a>
                     </span>
                   </div>

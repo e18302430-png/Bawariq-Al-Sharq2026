@@ -225,6 +225,7 @@ async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000
 }
 
 async function readAllCouriers(): Promise<Courier[]> {
+  const localList = readCouriersFile();
   if (firestoreRest) {
     try {
       const { projectId, databaseId, apiKey } = firestoreRest;
@@ -246,7 +247,7 @@ async function readAllCouriers(): Promise<Courier[]> {
       }
       
       const data = await res.json();
-      const list: Courier[] = [];
+      const firestoreList: Courier[] = [];
       const queryResults = Array.isArray(data) ? data : [];
 
       for (const item of queryResults) {
@@ -258,7 +259,7 @@ async function readAllCouriers(): Promise<Courier[]> {
         for (const key of Object.keys(fields)) {
           courierData[key] = fromFirestoreValue(fields[key]);
         }
-        list.push({
+        firestoreList.push({
           id,
           name: courierData.name || "",
           phone: courierData.phone || "",
@@ -278,14 +279,35 @@ async function readAllCouriers(): Promise<Courier[]> {
           adminNotes: courierData.adminNotes || "",
         } as Courier);
       }
-      writeCouriersFile(list);
-      return list;
+
+      // Merge localList and firestoreList securely by matching ID.
+      const mergedMap = new Map<string, Courier>();
+      for (const item of localList) {
+        mergedMap.set(item.id, item);
+      }
+      for (const item of firestoreList) {
+        const existingLocal = mergedMap.get(item.id);
+        if (existingLocal) {
+          // Merge fields, preferring firestore but keeping local ones if firestore is empty
+          mergedMap.set(item.id, {
+            ...existingLocal,
+            ...item,
+            apps: item.apps && item.apps.length > 0 ? item.apps : existingLocal.apps,
+          });
+        } else {
+          mergedMap.set(item.id, item);
+        }
+      }
+
+      const mergedList = Array.from(mergedMap.values());
+      writeCouriersFile(mergedList);
+      return mergedList;
     } catch (error) {
       console.warn("Firestore collection fetch failed (REST), querying local JSON fallback.", error);
-      return readCouriersFile();
+      return localList;
     }
   }
-  return readCouriersFile();
+  return localList;
 }
 
 async function saveCourier(courier: Courier) {
@@ -369,6 +391,7 @@ async function deleteCourier(id: string) {
 }
 
 async function readAllTickets(): Promise<SupportTicket[]> {
+  const localList = readTicketsFile();
   if (firestoreRest) {
     try {
       const { projectId, databaseId, apiKey } = firestoreRest;
@@ -390,7 +413,7 @@ async function readAllTickets(): Promise<SupportTicket[]> {
       }
       
       const data = await res.json();
-      const list: SupportTicket[] = [];
+      const firestoreList: SupportTicket[] = [];
       const queryResults = Array.isArray(data) ? data : [];
 
       for (const item of queryResults) {
@@ -402,7 +425,7 @@ async function readAllTickets(): Promise<SupportTicket[]> {
         for (const key of Object.keys(fields)) {
           ticketData[key] = fromFirestoreValue(fields[key]);
         }
-        list.push({
+        firestoreList.push({
           id,
           courierName: ticketData.courierName || "",
           courierPhone: ticketData.courierPhone || "",
@@ -414,14 +437,34 @@ async function readAllTickets(): Promise<SupportTicket[]> {
           messages: ticketData.messages || [],
         });
       }
-      writeTicketsFile(list);
-      return list;
+
+      // Merge localList and firestoreList securely by matching ID.
+      const mergedMap = new Map<string, SupportTicket>();
+      for (const item of localList) {
+        mergedMap.set(item.id, item);
+      }
+      for (const item of firestoreList) {
+        const existingLocal = mergedMap.get(item.id);
+        if (existingLocal) {
+          mergedMap.set(item.id, {
+            ...existingLocal,
+            ...item,
+            messages: item.messages && item.messages.length >= existingLocal.messages.length ? item.messages : existingLocal.messages,
+          });
+        } else {
+          mergedMap.set(item.id, item);
+        }
+      }
+
+      const mergedList = Array.from(mergedMap.values());
+      writeTicketsFile(mergedList);
+      return mergedList;
     } catch (error) {
       console.warn("Firestore support collection fetch failed (REST), querying local fallback.", error);
-      return readTicketsFile();
+      return localList;
     }
   }
-  return readTicketsFile();
+  return localList;
 }
 
 async function saveSupportTicket(ticket: SupportTicket) {

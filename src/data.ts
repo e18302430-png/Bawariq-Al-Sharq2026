@@ -90,9 +90,9 @@ export const INTERVIEW_SLOTS = [
 
 export const OFFICE_INFO = {
   city: "الدمام (المقر الرئيسي)",
-  address: "طريق ابو بكر الصديق، حي النور، برج الاعمال، مكتب ",
-  workingHours: "من السبت إلى الخميس: 09:00 صباحاً حتى 04:00 مساءً (الجمعة عطلة أسبوعية)",
-  phone: "+966 570150638",
-  locationCoords: { lat: 26.4385, lng: 50.0610 },
-  mapsLink: "https://maps.app.goo.gl/vG9Lp3zPrgH2bSgq9" 
+  address: "طريق أبو بكر الصديق، برج الأعمال، الدور الأول، مكتب 12",
+  workingHours: "من السبت إلى الخميس: 09:00 صباحاً حتى 09:00 مساءً (الجمعة عطلة أسبوعية)",
+  phone: "+966 50 000 0000",
+  locationCoords: { lat: 26.4172, lng: 50.0984 },
+  mapsLink: "https://maps.google.com/?q=Dammam+Abu+Bakr+Al+Siddiq+Road+Business+Tower"
 };
