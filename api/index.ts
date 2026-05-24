@@ -12,6 +12,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://gsvodabvuodhqgozisbq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdzdm9kYWJ2dW9kaHFnb3ppc2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MTY3MjYsImV4cCI6MjA5NTE5MjcyNn0.v_kZqy-bWDtbl8pAGW3qcpNh5JGpiAshbpiY9u3uxWA";
+const ADMIN_PASSWORD = "bawariq2026";
 
 async function db(table, method, body, query) {
   const url = `${SUPABASE_URL}/rest/v1/${table}${query ? "?" + query : ""}`;
@@ -30,6 +31,45 @@ async function db(table, method, body, query) {
   return text ? JSON.parse(text) : [];
 }
 
+function checkAdmin(password) {
+  return password === ADMIN_PASSWORD;
+}
+
+function mapCourier(c) {
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.phone,
+    city: c.city,
+    experience: c.experience,
+    apps: c.apps || [],
+    status: c.status || "جديد",
+    interviewDate: c.interview_date || "",
+    interviewTime: c.interview_time || "",
+    nationalId: c.national_id || "",
+    iban: c.iban || "",
+    carPlate: c.car_plate || "",
+    vehicleModel: c.vehicle_model || "",
+    appCourierCode: c.app_courier_code || "",
+    activationDate: c.activation_date || "",
+    adminNotes: c.admin_notes || "",
+    createdAt: c.created_at || "",
+  };
+}
+
+function mapTicket(t) {
+  return {
+    id: t.id,
+    courierName: t.courier_name || "",
+    courierPhone: t.courier_phone || "",
+    category: t.category || "عام",
+    subject: t.subject || "",
+    status: t.status || "جديد",
+    messages: t.messages || [],
+    createdAt: t.created_at || "",
+  };
+}
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -43,10 +83,16 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
 
+// ============================================================
+// Health
+// ============================================================
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", database: "supabase", timestamp: new Date().toISOString() });
 });
 
+// ============================================================
+// Delivery Apps
+// ============================================================
 const APPS_BASE = [
   { id: "hungerstation", name: "هنقرستيشن (HungerStation)", description: "المنصة الأكبر والأكثر طلباً بالمملكة مع بونص يومي مجزٍ", logo: "🍔", color: "from-amber-500 to-amber-600", textColor: "text-amber-500" },
   { id: "toyou", name: "تويو (ToYou)", description: "نمو متسارع وطلبات مستمرة وتغطية كافة أنحاء المدن الرئيسية", logo: "🚗", color: "from-red-500 to-red-600", textColor: "text-red-500" },
@@ -60,23 +106,18 @@ app.get("/api/delivery-apps", async (req, res) => {
   try {
     const settings = await db("app_settings", "GET");
     const apps = APPS_BASE.map((app) => {
-      const setting = settings.find((s) => s.id === app.id);
-      return {
-        ...app,
-        isAvailable: setting ? setting.is_available : true,
-        region: setting ? setting.region : "مستوى المملكة",
-        warningMessage: setting ? setting.warning_message : "",
-      };
+      const s = settings.find((x) => x.id === app.id);
+      return { ...app, isAvailable: s ? s.is_available : true, region: s ? s.region : "مستوى المملكة", warningMessage: s ? s.warning_message : "" };
     });
     res.json({ success: true, apps });
   } catch (e) {
-    res.json({
-      success: true,
-      apps: APPS_BASE.map(a => ({ ...a, isAvailable: true, region: "مستوى المملكة", warningMessage: "" })),
-    });
+    res.json({ success: true, apps: APPS_BASE.map(a => ({ ...a, isAvailable: true, region: "مستوى المملكة", warningMessage: "" })) });
   }
 });
 
+// ============================================================
+// Register & Schedule
+// ============================================================
 app.post("/api/register", async (req, res) => {
   try {
     const b = req.body;
@@ -86,22 +127,14 @@ app.post("/api/register", async (req, res) => {
     if (existing.length > 0)
       return res.status(409).json({ success: false, error: "رقم الجوال مسجل مسبقاً" });
     const data = await db("couriers", "POST", {
-      name: b.name,
-      phone: b.phone,
-      city: b.city,
-      experience: b.experience || "",
-      apps: b.apps || [],
-      national_id: b.nationalId || "",
-      status: "جديد",
-      interview_date: "",
-      interview_time: "",
-      admin_notes: "",
+      name: b.name, phone: b.phone, city: b.city,
+      experience: b.experience || "", apps: b.apps || [],
+      national_id: b.nationalId || "", status: "جديد",
+      interview_date: "", interview_time: "", admin_notes: "",
     });
     const courier = Array.isArray(data) ? data[0] : data;
-    res.status(201).json({ success: true, courierId: courier.id, courier });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.status(201).json({ success: true, courierId: courier.id, courier: mapCourier(courier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/api/schedule", async (req, res) => {
@@ -110,92 +143,130 @@ app.post("/api/schedule", async (req, res) => {
     if (!courierId || !interviewDate || !interviewTime)
       return res.status(400).json({ success: false, error: "بيانات الجدولة غير مكتملة" });
     const data = await db("couriers", "PATCH",
-      {
-        interview_date: interviewDate,
-        interview_time: interviewTime,
-        status: "تمت المقابلة",
-      },
+      { interview_date: interviewDate, interview_time: interviewTime, status: "تمت المقابلة" },
       `id=eq.${courierId}`
     );
     const courier = Array.isArray(data) ? data[0] : data;
-    res.json({ success: true, courier });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    res.json({ success: true, courier: mapCourier(courier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post("/api/couriers/lookup", async (req, res) => {
   try {
     const { query } = req.body;
-    if (!query)
-      return res.status(400).json({ success: false, error: "أدخل رقم الجوال أو الهوية" });
+    if (!query) return res.status(400).json({ success: false, error: "أدخل رقم الجوال أو الهوية" });
     let data = await db("couriers", "GET", undefined, `phone=eq.${query}`);
-    if (!data.length)
-      data = await db("couriers", "GET", undefined, `national_id=eq.${query}`);
-    if (!data.length)
-      return res.status(404).json({ success: false, error: "لم يتم العثور على أي طلب تقديم مطابق" });
-    res.json({ success: true, courier: data[0] });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
+    if (!data.length) data = await db("couriers", "GET", undefined, `national_id=eq.${query}`);
+    if (!data.length) return res.status(404).json({ success: false, error: "لم يتم العثور على أي طلب تقديم مطابق" });
+    res.json({ success: true, courier: mapCourier(data[0]) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.get("/api/couriers", async (req, res) => {
+// ============================================================
+// Admin Endpoints
+// ============================================================
+app.post("/api/admin/couriers", async (req, res) => {
   try {
-    res.json(await db("couriers", "GET", undefined, "order=created_at.desc"));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    if (!checkAdmin(req.body.password))
+      return res.status(403).json({ success: false, error: "كلمة المرور غير صحيحة" });
+    const data = await db("couriers", "GET", undefined, "order=created_at.desc");
+    res.json({ success: true, couriers: data.map(mapCourier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.get("/api/couriers/:id", async (req, res) => {
+app.post("/api/admin/update-status", async (req, res) => {
   try {
-    const data = await db("couriers", "GET", undefined, `id=eq.${req.params.id}`);
-    if (!data.length) return res.status(404).json({ error: "غير موجود" });
-    res.json(data[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const { password, courierId, status } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", { status }, `id=eq.${courierId}`);
+    const courier = Array.isArray(data) ? data[0] : data;
+    res.json({ success: true, courier: mapCourier(courier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.post("/api/couriers", async (req, res) => {
+app.post("/api/admin/update-profile", async (req, res) => {
   try {
-    const b = req.body;
-    if (!b.name || !b.phone || !b.city)
-      return res.status(400).json({ error: "الاسم والجوال والمدينة مطلوبة" });
-    const existing = await db("couriers", "GET", undefined, `phone=eq.${b.phone}`);
-    if (existing.length > 0)
-      return res.status(409).json({ error: "رقم الجوال مسجل مسبقاً" });
-    const data = await db("couriers", "POST", {
-      name: b.name, phone: b.phone, city: b.city,
-      experience: b.experience || "", apps: b.apps || [],
-      status: "جديد", interview_date: "", interview_time: "", admin_notes: "",
-    });
-    res.status(201).json(Array.isArray(data) ? data[0] : data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const { password, courierId, nationalId, iban, carPlate, vehicleModel, appCourierCode, activationDate, adminNotes } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", {
+      national_id: nationalId || "",
+      iban: iban || "",
+      car_plate: carPlate || "",
+      vehicle_model: vehicleModel || "",
+      app_courier_code: appCourierCode || "",
+      activation_date: activationDate || "",
+      admin_notes: adminNotes || "",
+    }, `id=eq.${courierId}`);
+    const courier = Array.isArray(data) ? data[0] : data;
+    res.json({ success: true, courier: mapCourier(courier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.patch("/api/couriers/:id", async (req, res) => {
+app.post("/api/admin/delete-courier", async (req, res) => {
   try {
-    const data = await db("couriers", "PATCH", req.body, `id=eq.${req.params.id}`);
-    res.json(Array.isArray(data) ? data[0] : data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete("/api/couriers/:id", async (req, res) => {
-  try {
-    await db("couriers", "DELETE", undefined, `id=eq.${req.params.id}`);
+    const { password, courierId } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    await db("couriers", "DELETE", undefined, `id=eq.${courierId}`);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+app.post("/api/admin/update-app-settings", async (req, res) => {
+  try {
+    const { password, id, isAvailable, region, warningMessage } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("app_settings", "PATCH",
+      { is_available: isAvailable, region: region || "مستوى المملكة", warning_message: warningMessage || "" },
+      `id=eq.${id}`
+    );
+    res.json({ success: true, setting: Array.isArray(data) ? data[0] : data });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/tickets", async (req, res) => {
+  try {
+    if (!checkAdmin(req.body.password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("support_tickets", "GET", undefined, "order=created_at.desc");
+    res.json({ success: true, tickets: data.map(mapTicket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/tickets/update-status", async (req, res) => {
+  try {
+    const { password, ticketId, status } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("support_tickets", "PATCH", { status }, `id=eq.${ticketId}`);
+    res.json({ success: true, ticket: mapTicket(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.get("/api/admin/download-csv", async (req, res) => {
+  try {
+    const { auth } = req.query;
+    if (!checkAdmin(auth)) return res.status(403).send("غير مصرح");
+    const couriers = await db("couriers", "GET", undefined, "order=created_at.desc");
+    const headers = ["الاسم", "الجوال", "المدينة", "الهوية", "التطبيقات", "الحالة", "موعد المقابلة", "وقت المقابلة", "IBAN", "المركبة", "اللوحة", "كود التطبيق", "تاريخ التفعيل", "الملاحظات", "تاريخ التسجيل"];
+    const rows = couriers.map(c => [
+      c.name, c.phone, c.city, c.national_id || "",
+      (c.apps || []).join(" - "), c.status || "جديد",
+      c.interview_date || "", c.interview_time || "",
+      c.iban || "", c.vehicle_model || "", c.car_plate || "",
+      c.app_courier_code || "", c.activation_date || "",
+      c.admin_notes || "", c.created_at || ""
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="bawariq-couriers-${new Date().toISOString().split("T")[0]}.csv"`);
+    res.send(csv);
+  } catch (e) { res.status(500).send("خطأ في تصدير البيانات"); }
+});
+
+// ============================================================
+// Support Tickets
+// ============================================================
 app.get("/api/tickets", async (req, res) => {
   try {
     res.json(await db("support_tickets", "GET", undefined, "order=created_at.desc"));
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get("/api/tickets/:id", async (req, res) => {
-  try {
-    const data = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
-    if (!data.length) return res.status(404).json({ error: "غير موجود" });
-    res.json(data[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -203,24 +274,34 @@ app.post("/api/tickets", async (req, res) => {
   try {
     const b = req.body;
     const data = await db("support_tickets", "POST", {
-      courier_name: b.courier_name,
-      courier_phone: b.courier_phone,
-      category: b.category || "عام",
-      subject: b.subject,
-      status: "جديد",
-      messages: b.messages || [],
+      courier_name: b.courier_name, courier_phone: b.courier_phone,
+      category: b.category || "عام", subject: b.subject,
+      status: "جديد", messages: b.messages || [],
     });
     res.status(201).json(Array.isArray(data) ? data[0] : data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.patch("/api/tickets/:id", async (req, res) => {
+app.post("/api/support/tickets/:id/messages", async (req, res) => {
   try {
-    const data = await db("support_tickets", "PATCH", req.body, `id=eq.${req.params.id}`);
-    res.json(Array.isArray(data) ? data[0] : data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const { sender, text, password } = req.body;
+    const ticketData = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!ticketData.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
+    const ticket = ticketData[0];
+    const messages = ticket.messages || [];
+    messages.push({ sender: sender || "user", text, createdAt: new Date().toISOString() });
+    const newStatus = sender === "admin" ? "تم الرد" : "قيد المتابعة";
+    const data = await db("support_tickets", "PATCH",
+      { messages, status: newStatus },
+      `id=eq.${req.params.id}`
+    );
+    res.json({ success: true, ticket: mapTicket(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// ============================================================
+// Settings
+// ============================================================
 app.get("/api/settings", async (req, res) => {
   try {
     const data = await db("app_settings", "GET");
@@ -246,6 +327,9 @@ app.patch("/api/settings/:id", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============================================================
+// Stats
+// ============================================================
 app.get("/api/stats", async (req, res) => {
   try {
     const couriers = await db("couriers", "GET");
@@ -263,6 +347,9 @@ app.get("/api/stats", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============================================================
+// Catch-all
+// ============================================================
 app.get("*", (req, res) => {
   const indexPath = path.join(__dirname, "..", "dist", "index.html");
   if (fs.existsSync(indexPath)) {
