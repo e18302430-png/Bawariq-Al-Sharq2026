@@ -4,7 +4,7 @@ import {
   Lock, KeyRound, Loader2, Download, Search, MapPin, 
   Layers, LogOut, RefreshCw, BarChart3, Users, Clock, AlertCircle, Eye, EyeOff,
   UserCheck, ShieldCheck, Edit, CreditCard, Car, Sparkles, X, FileText, CheckCircle2,
-  Send, MessageSquare, LifeBuoy
+  Send, MessageSquare, LifeBuoy, Settings
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -17,8 +17,8 @@ export default function AdminDashboard() {
   const [showPassword, setShowPassword] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   
-  // Tab controller: "applications" (new & interviews) vs "activated" (after office setup & activated) vs "support"
-  const [activeTab, setActiveTab] = useState<"applications" | "activated" | "support">("applications");
+  // Tab controller: "applications" (new & interviews) vs "activated" (after office setup & activated) vs "support" vs "settings"
+  const [activeTab, setActiveTab] = useState<"applications" | "activated" | "support" | "settings">("applications");
   
   // Search & Filter constraints
   const [searchTerm, setSearchTerm] = useState("");
@@ -46,6 +46,82 @@ export default function AdminDashboard() {
   const [activeTicket, setActiveTicket] = useState<any | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
+
+  // App dynamic settings configurations
+  const [appSettings, setAppSettings] = useState<Record<string, any>>({});
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSavingId, setSettingsSavingId] = useState<string | null>(null);
+
+  const fetchAppSettings = async () => {
+    setSettingsLoading(true);
+    try {
+      const res = await fetch("/api/delivery-apps");
+      const data = await res.json();
+      if (res.ok && data.success && data.apps) {
+        const rec: Record<string, any> = {};
+        data.apps.forEach((app: any) => {
+          rec[app.id] = {
+            id: app.id,
+            name: app.name,
+            isAvailable: app.isAvailable,
+            region: app.region,
+            warningMessage: app.warningMessage
+          };
+        });
+        setAppSettings(rec);
+      }
+    } catch (err) {
+      console.error("Error fetching app settings:", err);
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handleUpdateAppSetting = async (appId: string, isAvailable: boolean, region: string, warningMessage: string) => {
+    setSettingsSavingId(appId);
+    // Use inputted password or automatic authorization state
+    const pw = password || sessionStorage.getItem("admin_pw") || "bawariq2026";
+    try {
+      const res = await fetch("/api/admin/update-app-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: pw,
+          id: appId,
+          isAvailable,
+          region,
+          warningMessage
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAppSettings(prev => ({
+          ...prev,
+          [appId]: {
+            ...prev[appId],
+            isAvailable,
+            region,
+            warningMessage
+          }
+        }));
+        alert(`تم تفعيل التعديلات وتحديث إعدادات كابتن (${appSettings[appId]?.name?.split(" ")[0] || "تويو"}) بنجاح وتعميمها على المناديب! 🚀`);
+      } else {
+        alert(data.error || "فشل تحديث إعدادات التطبيق الإدارية.");
+      }
+    } catch (err) {
+      console.error("Error updating setting:", err);
+      alert("حدث خطأ في الشبكة السحابية أثناء الحفظ.");
+    } finally {
+      setSettingsSavingId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "settings" && isAuth) {
+      fetchAppSettings();
+    }
+  }, [activeTab, isAuth]);
 
   // Advanced comprehensive search for support tickets ("بحث بالاسم والهوية والمعرف وكل شيء")
   const getFilteredTickets = () => {
@@ -798,10 +874,24 @@ export default function AdminDashboard() {
             )}
           </span>
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("settings");
+          }}
+          className={`flex-1 md:flex-initial px-5 py-3.5 md:px-8 border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs md:text-sm font-extrabold ${
+            activeTab === "settings"
+              ? "border-amber-500 text-amber-500 bg-amber-500/5 font-black"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          <Settings className="w-4 h-4 text-amber-500" />
+          <span>إعدادات التطبيقات ونطاق العمل ⚙️</span>
+        </button>
       </div>
 
       {/* Advanced search and filters section */}
-      {activeTab !== "support" && (
+      {activeTab !== "support" && activeTab !== "settings" && (
         <div className="bg-slate-900/30 border border-slate-800 rounded-xl p-4 gap-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between">
           {/* Search Input */}
           <div className="relative flex-1">
@@ -884,7 +974,148 @@ export default function AdminDashboard() {
       {/* Data Table */}
       <div className="bg-slate-950/20 border border-slate-900 rounded-2xl overflow-hidden" id="admin-table-panel">
         <div>
-          {activeTab === "support" ? (
+          {activeTab === "settings" ? (
+            /* تحكم تطبيقات التوصيل وتلقي الطلبات */
+            <div className="p-6 md:p-8 space-y-8 bg-slate-950/40 rounded-2xl text-right animate-fade-in">
+              <div className="border-b border-slate-800 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-amber-500" />
+                    <span>تحكم التطبيقات الجاهزة، التفويض الفيدرالي، والأخطار ⚙️</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    يمكن للمسؤول تفعيل أو إلغاء تفعيل حسابات التوصيل، تخصيص المدن والمناطق التي ترغب بتشغيل الخدمة بها، وكتابة تذكيرات تظهر فورياً للكباتن بقالب رسائل الدستور.
+                  </p>
+                </div>
+                
+                <button
+                  type="button"
+                  onClick={fetchAppSettings}
+                  disabled={settingsLoading}
+                  className="px-4 py-2 bg-slate-900 border border-slate-850 hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-45"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${settingsLoading ? "animate-spin text-amber-500" : ""}`} />
+                  <span>تحديث البيانات</span>
+                </button>
+              </div>
+
+              {settingsLoading ? (
+                <div className="py-24 text-center text-slate-500 space-y-3">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-500" />
+                  <p className="text-xs font-bold">جاري جلب تفضيلات تفعيل التطبيقات...</p>
+                </div>
+              ) : (
+                <div className="grid gap-6 md:grid-cols-2">
+                  {Object.values(appSettings).map((app: any) => {
+                    const isSaving = settingsSavingId === app.id;
+                    return (
+                      <div key={app.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-lg flex flex-col justify-between">
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
+                            <span className="text-[10px] px-2 py-0.5 bg-slate-950/80 text-amber-550 border border-slate-800/80 rounded font-bold font-mono">
+                              برمجيات بوارق: {app.id}
+                            </span>
+                            <h4 className="text-xs font-black text-white flex items-center gap-2">
+                              <span>تطبيق {app.name}</span>
+                            </h4>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1.5 text-right">
+                              <label className="text-[11px] font-bold text-slate-400 block">حالة الحسابات والقبول</label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAppSettings(prev => ({
+                                    ...prev,
+                                    [app.id]: {
+                                      ...prev[app.id],
+                                      isAvailable: !prev[app.id].isAvailable
+                                    }
+                                  }));
+                                }}
+                                className={`w-full px-3 py-1.5 rounded-lg text-[10px] font-black transition-all border text-center ${
+                                  app.isAvailable 
+                                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" 
+                                    : "bg-rose-500/10 border-rose-500/30 text-rose-450"
+                                }`}
+                              >
+                                {app.isAvailable ? "● متاح حالياً للتسجيل" : "○ مغلق (نفذت الحسابات ⚠️)"}
+                              </button>
+                            </div>
+
+                            <div className="space-y-1.5 text-right">
+                              <label className="text-[11px] font-bold text-slate-400 block">منطقة العمل المخصصة</label>
+                              <input
+                                type="text"
+                                value={app.region}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setAppSettings(prev => ({
+                                    ...prev,
+                                    [app.id]: {
+                                      ...prev[app.id],
+                                      region: val
+                                    }
+                                  }));
+                                }}
+                                placeholder="الرياض، الدمام، أو كافة أنحاء المملكة..."
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-755 focus:outline-none focus:border-amber-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5 text-right">
+                            <label className="text-[11px] font-bold text-slate-400 block flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-450" />
+                              <span>تنبيه المندوب عند نفاذ الحسابات واختيار التطبيق</span>
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={app.warningMessage || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setAppSettings(prev => ({
+                                  ...prev,
+                                  [app.id]: {
+                                    ...prev[app.id],
+                                    warningMessage: val
+                                  }
+                                }));
+                              }}
+                              placeholder="أدخل رسالة مخصصة تظهر للكابتن بلون تحذيري عريض..."
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white leading-relaxed placeholder-slate-700 focus:outline-none focus:border-amber-500 resize-none font-sans"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-800/40 mt-4 flex justify-end">
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => handleUpdateAppSetting(app.id, app.isAvailable, app.region, app.warningMessage)}
+                            className="bg-amber-500 hover:brightness-110 text-slate-950 font-black text-[10px] px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-md shadow-amber-500/10"
+                          >
+                            {isSaving ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>جاري التحديث برمجياً...</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>حفظ وتعميم التعديل 🚀</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : activeTab === "support" ? (
             /* مركز تذاكر الدعم والربط السحابي */
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 md:p-6 bg-slate-950/40 rounded-2xl border border-slate-900 text-right">
               {/* قائمة تذاكر الدعم */}

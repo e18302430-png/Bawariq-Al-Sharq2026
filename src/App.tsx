@@ -6,7 +6,7 @@ import AppointmentScheduler from "./components/AppointmentScheduler";
 import TicketSummary from "./components/TicketSummary";
 import AdminDashboard from "./components/AdminDashboard";
 import SupportPortal from "./components/SupportPortal";
-import { Sparkles, CheckCircle2, FileText, ArrowLeft, Trophy, LifeBuoy, MapPin } from "lucide-react";
+import { Sparkles, CheckCircle2, FileText, ArrowLeft, Trophy, LifeBuoy, MapPin, Search, Loader2, AlertCircle, X } from "lucide-react";
 
 export default function App() {
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -39,6 +39,78 @@ export default function App() {
   const [scheduledTime, setScheduledTime] = useState("");
   const [courierName, setCourierName] = useState("");
   const [footerClicks, setFooterClicks] = useState(0);
+
+  // Lookup states for active courier session recovery/check status
+  const [showLookup, setShowLookup] = useState(false);
+  const [lookupQuery, setLookupQuery] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [lookupSuccessMsg, setLookupSuccessMsg] = useState("");
+
+  const handleLookup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLookupError("");
+    setLookupSuccessMsg("");
+    setLookupLoading(true);
+
+    try {
+      const response = await fetch("/api/couriers/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: lookupQuery }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "عذراً، لم نجد أي طلب تقديم متطابق.");
+      }
+
+      const { courier } = data;
+      
+      // Restoring courier context values in memory
+      setCourierId(courier.id);
+      setCourierName(courier.name);
+      
+      const info = {
+        name: courier.name,
+        phone: courier.phone,
+        city: courier.city,
+        apps: courier.apps || [],
+        nationalId: courier.nationalId || ""
+      };
+      setRegistrationInfo(info);
+
+      // Save to localStorage for reloading sessions persistently
+      localStorage.setItem("bawariq_courier_id", courier.id);
+      localStorage.setItem("bawariq_courier_name", courier.name);
+      localStorage.setItem("bawariq_courier_phone", courier.phone);
+      localStorage.setItem("bawariq_courier_reg_info", JSON.stringify(info));
+
+      if (courier.interviewDate && courier.interviewTime) {
+        setScheduledDate(courier.interviewDate);
+        setScheduledTime(courier.interviewTime);
+        setStep(3); // summary
+        localStorage.setItem("bawariq_courier_step", "3");
+        localStorage.setItem("bawariq_courier_scheduled_date", courier.interviewDate);
+        localStorage.setItem("bawariq_courier_scheduled_time", courier.interviewTime);
+      } else {
+        setStep(2); // scheduler
+        localStorage.setItem("bawariq_courier_step", "2");
+      }
+
+      setLookupSuccessMsg(`أهلاً بك مجدداً يا كابتن ${courier.name}! تم تمكين ومزامنة جلستك بنجاح.`);
+      setTimeout(() => {
+        setShowLookup(false);
+        setLookupQuery("");
+        setLookupSuccessMsg("");
+      }, 3000);
+
+    } catch (err: any) {
+      setLookupError(err.message || "حدث خطأ أثناء فحص البيانات سحابياً.");
+    } finally {
+      setLookupLoading(false);
+    }
+  };
 
   // Synchronize and restore courier authentication state from localStorage (persistent sessions requested by user)
   useEffect(() => {
@@ -254,6 +326,86 @@ export default function App() {
                       تصفح شركاء التوسع
                     </a>
                   </div>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={() => {
+                        setShowLookup(!showLookup);
+                        setLookupError("");
+                        setLookupSuccessMsg("");
+                      }}
+                      className="text-xs text-amber-500 font-extrabold flex items-center gap-1.5 mx-auto hover:text-amber-450 cursor-pointer border border-amber-500/20 px-5 py-2.5 rounded-full bg-slate-900/50 hover:bg-slate-900 transition-all font-sans shadow-md"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>هل قمت بالتسجيل مسبقاً؟ الاستعلام عن حالة الطلب أو استرجاع الجلسة 🔍</span>
+                    </button>
+                  </div>
+
+                  {/* Inline lookup slide panel */}
+                  {showLookup && (
+                    <div className="max-w-md mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl relative animate-fade-in space-y-4 text-right">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowLookup(false)}
+                          className="p-1 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-slate-350 transition-colors cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                          <Search className="w-4 h-4 text-amber-400" />
+                          <span>الاستعلام عن طلب واسترجاع الجلسة سحابياً</span>
+                        </h4>
+                      </div>
+
+                      <form onSubmit={handleLookup} className="space-y-4">
+                        {lookupError && (
+                          <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[11px] p-3 rounded-xl flex items-center gap-2 text-right">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            <span>{lookupError}</span>
+                          </div>
+                        )}
+
+                        {lookupSuccessMsg && (
+                          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] p-3 rounded-xl flex items-center gap-2 text-right">
+                            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                            <span>{lookupSuccessMsg}</span>
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-bold text-slate-300 block">رقم الجوال أو رقم الهوية الوطنية / الإقامة</label>
+                          <input
+                            type="text"
+                            required
+                            value={lookupQuery}
+                            onChange={(e) => setLookupQuery(e.target.value)}
+                            placeholder="مثال: 0512345678 أو 1024354228"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-center text-white placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono"
+                          />
+                          <p className="text-[9px] text-slate-500 text-center">أدخل رقم الهاتف أو الهوية الذي استخدمته عند تسجيل بياناتك أول مرة.</p>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={lookupLoading}
+                          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-600 text-slate-950 font-extrabold text-xs py-2.5 px-4 rounded-xl hover:brightness-110 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {lookupLoading ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>جاري البحث في قاعدة البيانات...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Search className="w-3.5 h-3.5" />
+                              <span>استرجاع حالة الطلب الفورية</span>
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    </div>
+                  )}
 
                   <div className="pt-2 flex flex-wrap justify-center items-center gap-x-6 gap-y-2.5 text-slate-500 text-xs text-center">
                     <span className="flex items-center gap-1">

@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DELIVERY_APPS, SAUDI_CITIES, EXPERIENCE_LEVELS } from "../data";
-import { User, Phone, MapPin, Briefcase, Check, ArrowLeft, ArrowRight, Loader2, Landmark, Fingerprint } from "lucide-react";
+import { User, Phone, MapPin, Briefcase, Check, ArrowLeft, ArrowRight, Loader2, Landmark, Fingerprint, AlertTriangle } from "lucide-react";
 
 interface RegistrationFormProps {
   onSuccess: (courierId: string, info: { name: string; phone: string; city: string; apps: string[]; nationalId?: string }) => void;
@@ -26,22 +26,43 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
   const [useCustomCity, setUseCustomCity] = useState(false);
   const [experience, setExperience] = useState(EXPERIENCE_LEVELS[0].label);
   const [customExperience, setCustomExperience] = useState("");
+  
+  // Dynamic delivery apps loaded from backend configurations with static fallback
+  const [deliveryApps, setDeliveryApps] = useState<any[]>(DELIVERY_APPS);
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    fetch("/api/delivery-apps")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.apps) {
+          setDeliveryApps(data.apps);
+        }
+      })
+      .catch((err) => console.warn("Failed loading live delivery apps catalog:", err));
+  }, []);
+
   const handleAppToggle = (appId: string) => {
+    const targetApp = deliveryApps.find((a) => a.id === appId);
+    if (targetApp && !targetApp.isAvailable) {
+      // Alert/Notification regarding app being out-of-stock (نفاذ الحسابات المتاحة)
+      alert(`⚠️ تنبيه عاجل من إدارة بوارق الشرق:\n\nعذراً يا كابتن، تطبيق (${targetApp.name.split(" ")[0]}) غير متاح للتسجيل حالياً بسبب نفاد الحسابات الجاهزة المتوفرة لدينا بالمحافظة.\n\nالرسالة الإدارية: ${targetApp.warningMessage || "نعمل على إعادة تزويد الحسابات وسنرسل لك إشعاراً فور توفرها. يرجى اختيار التطبيقات الأخرى المتاحة حالياً للانضمام الفوري وبدء العمل."}`);
+      return;
+    }
     setSelectedApps((prev) =>
       prev.includes(appId) ? prev.filter((id) => id !== appId) : [...prev, appId]
     );
   };
 
   const handleSelectAllApps = () => {
-    if (selectedApps.length === DELIVERY_APPS.length) {
+    const activeAndAvailable = deliveryApps.filter(a => a.isAvailable).map(a => a.id);
+    if (selectedApps.length === activeAndAvailable.length) {
       setSelectedApps([]); // clear
     } else {
-      setSelectedApps(DELIVERY_APPS.map(a => a.id)); // select all
+      setSelectedApps(activeAndAvailable); // select available only
     }
   };
 
@@ -330,21 +351,24 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
             onClick={handleSelectAllApps}
             className="text-xs text-amber-400 hover:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg font-bold"
           >
-            {selectedApps.length === DELIVERY_APPS.length ? "إلغاء اختيار الكل" : "اختر كافة التطبيقات المتاحة لقناة الدخل الأقصى"}
+            {selectedApps.length === deliveryApps.filter(a => a.isAvailable).length ? "إلغاء اختيار الكل" : "اختر كافة التطبيقات المتاحة لقناة الدخل الأقصى"}
           </button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {DELIVERY_APPS.map((app) => {
+          {deliveryApps.map((app) => {
             const isSelected = selectedApps.includes(app.id);
+            const isAvailable = app.isAvailable;
             return (
               <div
                 key={app.id}
                 onClick={() => handleAppToggle(app.id)}
-                className={`cursor-pointer rounded-2xl p-4 border transition-all duration-300 relative flex flex-col justify-between select-none ${
-                  isSelected
-                    ? "bg-gradient-to-br from-slate-900 via-slate-900/90 to-slate-950 border-amber-500 ring-2 ring-amber-500/20"
-                    : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700/80"
+                className={`rounded-2xl p-4 border transition-all duration-300 relative flex flex-col justify-between select-none ${
+                  !isAvailable
+                    ? "bg-slate-950/40 border-slate-900 opacity-60 cursor-not-allowed hover:bg-slate-950/60"
+                    : isSelected
+                    ? "bg-gradient-to-br from-slate-900 via-slate-900/90 to-slate-950 border-amber-500 ring-2 ring-amber-500/20 cursor-pointer"
+                    : "bg-slate-950/70 border-slate-800/80 hover:border-slate-700/80 cursor-pointer"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -352,21 +376,36 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
                     <span className="text-2xl bg-slate-950 p-1.5 rounded-lg border border-slate-800">
                       {app.logo}
                     </span>
-                    <span className="text-sm font-bold text-white">{app.name.split(" ")[0]}</span>
+                    <div className="flex flex-col gap-0.5 text-right">
+                      <span className="text-xs font-bold text-white">{app.name.split(" ")[0]}</span>
+                      <span className="text-[10px] text-amber-500 font-bold leading-none">📍 {app.region}</span>
+                    </div>
                   </div>
 
-                  <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
-                    isSelected
-                      ? "bg-amber-500 border-amber-400 text-slate-950"
-                      : "bg-slate-900 border-slate-800"
-                  }`}>
-                    {isSelected && <Check className="w-3.5 h-3.5 stroke-[3.5]" />}
-                  </div>
+                  {!isAvailable ? (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-450 border border-rose-500/20 font-bold animate-pulse leading-none flex items-center justify-center">
+                      نفد المعروض ⚠️
+                    </span>
+                  ) : (
+                    <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+                      isSelected
+                        ? "bg-amber-500 border-amber-400 text-slate-950"
+                        : "bg-slate-900 border-slate-800"
+                    }`}>
+                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3.5]" />}
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-[11px] text-slate-400 mt-2.5 leading-relaxed">
                   {app.description}
                 </p>
+
+                {!isAvailable && (
+                  <div className="text-[9px] text-rose-400 border-t border-slate-850/50 pt-2 mt-2 flex items-center gap-1 font-sans">
+                    <span>* عذراً: غير متاح لعدم توفر الحسابات حالياً</span>
+                  </div>
+                )}
               </div>
             );
           })}

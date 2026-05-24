@@ -25,12 +25,14 @@ try {
 
 const DATA_FILE = path.join(DATA_DIR, "couriers.json");
 const TICKETS_FILE = path.join(DATA_DIR, "support_tickets.json");
+const SETTINGS_FILE = path.join(DATA_DIR, "app_settings.json");
 const DEBUG_LOG_FILE = path.join(DATA_DIR, "debug.log");
 
 // Seed/Copy from read-only application data folder to writable folder if needed
 try {
   const seedCouriersPath = path.join(process.cwd(), "data", "couriers.json");
   const seedTicketsPath = path.join(process.cwd(), "data", "support_tickets.json");
+  const seedSettingsPath = path.join(process.cwd(), "data", "app_settings.json");
 
   if (!fs.existsSync(DATA_FILE)) {
     if (fs.existsSync(seedCouriersPath)) {
@@ -45,6 +47,22 @@ try {
       fs.copyFileSync(seedTicketsPath, TICKETS_FILE);
     } else {
       fs.writeFileSync(TICKETS_FILE, JSON.stringify([], null, 2), "utf8");
+    }
+  }
+
+  if (!fs.existsSync(SETTINGS_FILE)) {
+    if (fs.existsSync(seedSettingsPath)) {
+      fs.copyFileSync(seedSettingsPath, SETTINGS_FILE);
+    } else {
+      const defaultSettings = {
+        hungerstation: { id: "hungerstation", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+        toyou: { id: "toyou", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+        keeta: { id: "keeta", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+        thechefs: { id: "thechefs", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+        mrsool: { id: "mrsool", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+        jahez: { id: "jahez", isAvailable: true, region: "مستوى المملكة", warningMessage: "" }
+      };
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 2), "utf8");
     }
   }
 } catch (e) {
@@ -237,6 +255,35 @@ function writeCouriersFile(couriers: Courier[]) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(couriers, null, 2), "utf8");
   } catch (error) {
     console.error("Error writing backup file:", error);
+  }
+}
+
+// Read App Settings Helper
+function readSettingsFile(): Record<string, any> {
+  const defaultSettings = {
+    hungerstation: { id: "hungerstation", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    toyou: { id: "toyou", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    keeta: { id: "keeta", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    thechefs: { id: "thechefs", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    mrsool: { id: "mrsool", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    jahez: { id: "jahez", isAvailable: true, region: "مستوى المملكة", warningMessage: "" }
+  };
+  try {
+    if (!fs.existsSync(SETTINGS_FILE)) return defaultSettings;
+    const content = fs.readFileSync(SETTINGS_FILE, "utf8");
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("Error reading settings file:", error);
+    return defaultSettings;
+  }
+}
+
+// Write App Settings Helper
+function writeSettingsFile(settings: Record<string, any>) {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf8");
+  } catch (error) {
+    console.error("Error writing settings file:", error);
   }
 }
 
@@ -747,6 +794,93 @@ app.get("/api/couriers/:id", async (req, res) => {
     res.json({ success: true, courier });
   } catch (error: any) {
     res.status(500).json({ error: "فشل جلب الملف: " + error.message });
+  }
+});
+
+// 2.75 Look up courier by phone number or national ID (Restoring session / check status)
+app.post("/api/couriers/lookup", async (req, res) => {
+  try {
+    const { query } = req.body;
+    if (!query) {
+      return res.status(400).json({ error: "الرجاء إدخال رقم الجوال أو رقم الهوية الوطنية للاستعلام" });
+    }
+
+    const cleanQuery = query.replace(/\s+/g, "").trim();
+    if (!cleanQuery) {
+      return res.status(400).json({ error: "الرجاء إدخال رقم استعلام صالح" });
+    }
+
+    const couriers = await readAllCouriers();
+    const courier = couriers.find((c) => {
+      const matchPhone = c.phone && c.phone.replace(/\s+/g, "").includes(cleanQuery);
+      const matchNationalId = c.nationalId && c.nationalId.replace(/\s+/g, "").includes(cleanQuery);
+      return matchPhone || matchNationalId;
+    });
+
+    if (!courier) {
+      return res.status(404).json({ error: "لم نجد أي طلب تقديم مسجل بهذا الرقم. يرجى التأكد وإعادة المحاولة أو إنشاء طلب جديد." });
+    }
+
+    res.json({ success: true, courier });
+  } catch (error: any) {
+    res.status(500).json({ error: "فشل الاستعلام عن حالة الطلب: " + error.message });
+  }
+});
+
+// 2.80 Get delivery apps with dynamic administrative overrides
+app.get("/api/delivery-apps", (req, res) => {
+  try {
+    const settings = readSettingsFile();
+    // Static app descriptions from list, client will consume these merged
+    const staticApps = [
+      { id: "hungerstation", name: "هنقرستيشن (Hungerstation)", desc: "برنامج بوارق الحصري لربط حسابات هنقرستيشن مباشرة وتوزيع الطلبات بنسب تشغيلية مريحة.", logo: "🚚", color: "from-amber-500 to-amber-600" },
+      { id: "toyou", name: "تويو (ToYou)", desc: "تفعيل مباشر لكود كابتن تويو على مستوى المملكة مع دعم فني أسبوعي متكامل.", logo: "⚡", color: "from-cyan-400 to-cyan-500" },
+      { id: "keeta", name: "كيتا (Keeta)", desc: "الانضمام لبرنامج كابتن كيتا المعتمد بامتيازات وحوافز وحصانة من الغرامات لشركاء بوارق.", logo: "📦", color: "from-emerald-400 to-emerald-500" },
+      { id: "thechefs", name: "ذا شفز (The Chefs)", desc: "توزيع وجبات وحلويات فاخرة بمناطق تشغيلية ممتازة ومعدلات ربح مميزة.", logo: "🧁", color: "from-purple-400 to-pink-500" },
+      { id: "mrsool", name: "مرسول (Mrsool)", desc: "عمل مرن وحر للغاية لتوصيل أي شيء في أي وقت لأكثر من 5 ملايين مستخدم نشط بالمملكة.", logo: "🦅", color: "from-blue-400 to-indigo-500" },
+      { id: "jahez", name: "جاهز (Jahez)", desc: "الكود الأكثر طلباً، تفعيل مباشر مع بوارق الشرق وحقائب حرارية مطابقة للمواصفات ونسبة عمولة ثابتة ومنافسة.", logo: "🎯", color: "from-rose-400 to-orange-500" }
+    ];
+
+    const mergedApps = staticApps.map((app) => {
+      const override = settings[app.id] || { isAvailable: true, region: "مستوى المملكة", warningMessage: "" };
+      return {
+        ...app,
+        isAvailable: override.isAvailable,
+        region: override.region || "مستوى المملكة",
+        warningMessage: override.warningMessage || ""
+      };
+    });
+
+    res.json({ success: true, apps: mergedApps });
+  } catch (error: any) {
+    res.status(500).json({ error: "فشل جلب تطبيقات التوصيل: " + error.message });
+  }
+});
+
+// 2.85 Save/Update delivery app settings (Admin panel action)
+app.post("/api/admin/update-app-settings", (req, res) => {
+  try {
+    const { password, id, isAvailable, region, warningMessage } = req.body;
+    if (password !== "bawariq2026") {
+      return res.status(403).json({ error: "عذراً، الرمز السري بغير محلّه المصرح به لـ بوارق" });
+    }
+
+    if (!id) {
+      return res.status(400).json({ error: "الرجاء تحديد معرف التطبيق لتعديله" });
+    }
+
+    const settings = readSettingsFile();
+    settings[id] = {
+      id,
+      isAvailable: isAvailable !== undefined ? isAvailable : true,
+      region: region || "مستوى المملكة",
+      warningMessage: warningMessage || ""
+    };
+
+    writeSettingsFile(settings);
+    res.json({ success: true, settings: settings[id] });
+  } catch (error: any) {
+    res.status(500).json({ error: "فشل تحديث إعدادات التطبيق: " + error.message });
   }
 });
 
