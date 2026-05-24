@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { Firestore } from "@google-cloud/firestore";
 
 const app = express();
 const PORT = 3000;
@@ -8,8 +9,12 @@ const PORT = 3000;
 // Enable JSON parsing
 app.use(express.json());
 
-// Detect writeable data directory dynamically
-let DATA_DIR = path.join(process.cwd(), "data");
+// Detect writeable data directory dynamically (use /tmp in production/serverless)
+let DATA_DIR = "/tmp";
+if (process.env.NODE_ENV !== "production") {
+  DATA_DIR = path.join(process.cwd(), "data");
+}
+
 try {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -22,19 +27,28 @@ const DATA_FILE = path.join(DATA_DIR, "couriers.json");
 const TICKETS_FILE = path.join(DATA_DIR, "support_tickets.json");
 const DEBUG_LOG_FILE = path.join(DATA_DIR, "debug.log");
 
-// Ensure data directory exists early and defensively
+// Seed/Copy from read-only application data folder to writable folder if needed
 try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+  const seedCouriersPath = path.join(process.cwd(), "data", "couriers.json");
+  const seedTicketsPath = path.join(process.cwd(), "data", "support_tickets.json");
+
   if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
+    if (fs.existsSync(seedCouriersPath)) {
+      fs.copyFileSync(seedCouriersPath, DATA_FILE);
+    } else {
+      fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
+    }
   }
+
   if (!fs.existsSync(TICKETS_FILE)) {
-    fs.writeFileSync(TICKETS_FILE, JSON.stringify([], null, 2), "utf8");
+    if (fs.existsSync(seedTicketsPath)) {
+      fs.copyFileSync(seedTicketsPath, TICKETS_FILE);
+    } else {
+      fs.writeFileSync(TICKETS_FILE, JSON.stringify([], null, 2), "utf8");
+    }
   }
 } catch (e) {
-  console.warn("⚠️ DATA_DIR initialization caught expected read-only or permission warning:", e);
+  console.warn("⚠️ DATA_DIR seeding/copying had a warning:", e);
 }
 
 // Request and Crash Debug Logger
@@ -157,6 +171,8 @@ let firestoreRest: {
   apiKey: string;
 } | null = null;
 
+let firestoreClient: Firestore | null = null;
+
 try {
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(firebaseConfigPath)) {
@@ -167,11 +183,19 @@ try {
       apiKey: config.apiKey
     };
     console.log(`⚡ Firestore REST Client configured. Project: ${config.projectId}, DB: ${config.firestoreDatabaseId}`);
+
+    firestoreClient = new Firestore({
+      projectId: config.projectId,
+      databaseId: config.firestoreDatabaseId || "(default)"
+    });
+    console.log(`⚡ Native Firestore Client initialized for project ${config.projectId}, DB: ${config.firestoreDatabaseId}`);
   } else {
+    firestoreClient = new Firestore();
+    console.log("⚡ Native Firestore Client initialized with default credentials.");
     console.warn("⚠️ No firebase-applet-config.json found. Running on fallback local file database.");
   }
-} catch (e) {
-  console.warn("⚠️ Firestore REST initialization deferred, running on fallback local file database.", e);
+} catch (e: any) {
+  console.warn("⚠️ Firestore Client / REST initialization deferred, running on fallback local file database:", e.message);
 }
 
 // Read Support Tickets Helper (From local JSON file)
@@ -333,8 +357,50 @@ async function callFirestoreREST(
   }
 }
 
+function mergeCouriers(localList: Courier[], firestoreList: Courier[]): Courier[] {
+  const mergedMap = new Map<string, Courier>();
+  for (const item of localList) {
+    mergedMap.set(item.id, item);
+  }
+  for (const item of firestoreList) {
+    const existingLocal = mergedMap.get(item.id);
+    if (existingLocal) {
+      mergedMap.set(item.id, {
+        ...existingLocal,
+        ...item,
+        apps: item.apps && item.apps.length > 0 ? item.apps : existingLocal.apps,
+      });
+    } else {
+      mergedMap.set(item.id, item);
+    }
+  }
+  const mergedList = Array.from(mergedMap.values());
+  writeCouriersFile(mergedList);
+  return mergedList;
+}
+
 async function readAllCouriers(): Promise<Courier[]> {
   const localList = readCouriersFile();
+
+  // 1. Try Native Firestore Client (Highest performance, native auth)
+  if (firestoreClient) {
+    try {
+      const snapshot = await firestoreClient.collection("couriers").get();
+      const firestoreList: Courier[] = [];
+      snapshot.forEach((doc) => {
+        const d = doc.data();
+        firestoreList.push({
+          id: doc.id,
+          ...d,
+        } as Courier);
+      });
+      return mergeCouriers(localList, firestoreList);
+    } catch (sdkError: any) {
+      console.warn("⚠️ Native Firestore SDK query failed, trying REST API fallback...", sdkError.message);
+    }
+  }
+
+  // 2. Try REST API Client (Fallback)
   if (firestoreRest) {
     try {
       const payload = {
@@ -377,33 +443,12 @@ async function readAllCouriers(): Promise<Courier[]> {
         } as Courier);
       }
 
-      // Merge localList and firestoreList securely by matching ID.
-      const mergedMap = new Map<string, Courier>();
-      for (const item of localList) {
-        mergedMap.set(item.id, item);
-      }
-      for (const item of firestoreList) {
-        const existingLocal = mergedMap.get(item.id);
-        if (existingLocal) {
-          // Merge fields, preferring firestore but keeping local ones if firestore is empty
-          mergedMap.set(item.id, {
-            ...existingLocal,
-            ...item,
-            apps: item.apps && item.apps.length > 0 ? item.apps : existingLocal.apps,
-          });
-        } else {
-          mergedMap.set(item.id, item);
-        }
-      }
-
-      const mergedList = Array.from(mergedMap.values());
-      writeCouriersFile(mergedList);
-      return mergedList;
-    } catch (error: any) {
-      console.error("Firestore collection fetch failed (REST), querying local JSON fallback.", error.message);
-      return localList;
+      return mergeCouriers(localList, firestoreList);
+    } catch (restError: any) {
+      console.error("Firestore REST list failed, fallback to local JSON database.", restError.message);
     }
   }
+
   return localList;
 }
 
@@ -418,7 +463,18 @@ async function saveCourier(courier: Courier) {
   }
   writeCouriersFile(localList);
 
-  // 2. Write to Firestore permanently
+  // 2. Try native Firestore Client first
+  if (firestoreClient) {
+    try {
+      await firestoreClient.collection("couriers").doc(courier.id).set(courier);
+      console.log(`Document ${courier.id} successfully saved to Native Cloud Firestore.`);
+      return;
+    } catch (sdkError: any) {
+      console.warn("⚠️ Native Firestore SDK set failed, trying REST API fallback...", sdkError.message);
+    }
+  }
+
+  // 3. Fallback to Cloud Firestore REST API
   if (firestoreRest) {
     try {
       const fields: any = {};
@@ -459,7 +515,18 @@ async function deleteCourier(id: string) {
   const filtered = localList.filter((c) => c.id !== id);
   writeCouriersFile(filtered);
 
-  // 2. Delete from Firestore
+  // 2. Try Native Firestore Client first
+  if (firestoreClient) {
+    try {
+      await firestoreClient.collection("couriers").doc(id).delete();
+      console.log(`Document ${id} successfully deleted from Native Cloud Firestore.`);
+      return;
+    } catch (sdkError: any) {
+      console.warn("⚠️ Native Firestore SDK delete failed, trying REST API fallback...", sdkError.message);
+    }
+  }
+
+  // 3. Fallback to Cloud Firestore REST API
   if (firestoreRest) {
     try {
       await callFirestoreREST("couriers", "DELETE", null, `/${id}`);
@@ -470,8 +537,50 @@ async function deleteCourier(id: string) {
   }
 }
 
+function mergeTickets(localList: SupportTicket[], firestoreList: SupportTicket[]): SupportTicket[] {
+  const mergedMap = new Map<string, SupportTicket>();
+  for (const item of localList) {
+    mergedMap.set(item.id, item);
+  }
+  for (const item of firestoreList) {
+    const existingLocal = mergedMap.get(item.id);
+    if (existingLocal) {
+      mergedMap.set(item.id, {
+        ...existingLocal,
+        ...item,
+        messages: item.messages && item.messages.length >= existingLocal.messages.length ? item.messages : existingLocal.messages,
+      });
+    } else {
+      mergedMap.set(item.id, item);
+    }
+  }
+  const mergedList = Array.from(mergedMap.values());
+  writeTicketsFile(mergedList);
+  return mergedList;
+}
+
 async function readAllTickets(): Promise<SupportTicket[]> {
   const localList = readTicketsFile();
+
+  // 1. Try Native Firestore Client
+  if (firestoreClient) {
+    try {
+      const snapshot = await firestoreClient.collection("support_tickets").get();
+      const firestoreList: SupportTicket[] = [];
+      snapshot.forEach((doc) => {
+        const d = doc.data();
+        firestoreList.push({
+          id: doc.id,
+          ...d,
+        } as SupportTicket);
+      });
+      return mergeTickets(localList, firestoreList);
+    } catch (sdkError: any) {
+      console.warn("⚠️ Native Firestore SDK tickets query failed, trying REST API fallback...", sdkError.message);
+    }
+  }
+
+  // 2. Try REST API Client
   if (firestoreRest) {
     try {
       const payload = {
@@ -506,32 +615,12 @@ async function readAllTickets(): Promise<SupportTicket[]> {
         });
       }
 
-      // Merge localList and firestoreList securely by matching ID.
-      const mergedMap = new Map<string, SupportTicket>();
-      for (const item of localList) {
-        mergedMap.set(item.id, item);
-      }
-      for (const item of firestoreList) {
-        const existingLocal = mergedMap.get(item.id);
-        if (existingLocal) {
-          mergedMap.set(item.id, {
-            ...existingLocal,
-            ...item,
-            messages: item.messages && item.messages.length >= existingLocal.messages.length ? item.messages : existingLocal.messages,
-          });
-        } else {
-          mergedMap.set(item.id, item);
-        }
-      }
-
-      const mergedList = Array.from(mergedMap.values());
-      writeTicketsFile(mergedList);
-      return mergedList;
-    } catch (error: any) {
-      console.error("Firestore support collection fetch failed (REST), querying local fallback.", error.message);
-      return localList;
+      return mergeTickets(localList, firestoreList);
+    } catch (restError: any) {
+      console.error("Firestore support collection list failed, fallback to local JSON database.", restError.message);
     }
   }
+
   return localList;
 }
 
@@ -546,7 +635,18 @@ async function saveSupportTicket(ticket: SupportTicket) {
   }
   writeTicketsFile(localList);
 
-  // 2. Synchronize to Firestore
+  // 2. Try Native Firestore Client first
+  if (firestoreClient) {
+    try {
+      await firestoreClient.collection("support_tickets").doc(ticket.id).set(ticket);
+      console.log(`Support ticket ${ticket.id} successfully saved to Native Cloud Firestore.`);
+      return;
+    } catch (sdkError: any) {
+      console.warn("⚠️ Native Firestore SDK ticket save failed, trying REST API fallback...", sdkError.message);
+    }
+  }
+
+  // 3. Fallback to Cloud Firestore REST API
   if (firestoreRest) {
     try {
       const fields: any = {};

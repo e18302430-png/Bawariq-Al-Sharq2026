@@ -1,4 +1,3 @@
-import app from "../dist/server.cjs";
-import serverless from "serverless-http";
+import app from "../server";
 
-export default serverless(app);
+export default app;
