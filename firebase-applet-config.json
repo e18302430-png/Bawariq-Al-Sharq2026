@@ -1,10 +1,37 @@
-{
-  "projectId": "skilful-base-9h7sp",
-  "appId": "1:523154382385:web:3bbbd8a94a31ef8e553f10",
-  "apiKey": "AIzaSyAhIBdwHlS0QdflEzlUzEp3wdpyH3YQqWc",
-  "authDomain": "skilful-base-9h7sp.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-866ed8ec-536b-4ba2-b868-4042176c0add",
-  "storageBucket": "skilful-base-9h7sp.firebasestorage.app",
-  "messagingSenderId": "523154382385",
-  "measurementId": ""
-}
+// Import the functions you need from the SDKs you need
+
+import { initializeApp } from "firebase/app";
+
+import { getAnalytics } from "firebase/analytics";
+
+// TODO: Add SDKs for Firebase products that you want to use
+
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+
+const firebaseConfig = {
+
+  apiKey: "AIzaSyDJqAB0bZMh69l4KmljWGmY9xf0_ssMNeI",
+
+  authDomain: "bawariq-al-sharq.firebaseapp.com",
+
+  projectId: "bawariq-al-sharq",
+
+  storageBucket: "bawariq-al-sharq.firebasestorage.app",
+
+  messagingSenderId: "388125417147",
+
+  appId: "1:388125417147:web:a79295277e3c330d3bd39e",
+
+  measurementId: "G-09T8K895RQ"
+
+};
+
+// Initialize Firebase
+
+const app = initializeApp(firebaseConfig);
+
+const analytics = getAnalytics(app);
