@@ -53,7 +53,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // ============================================================
-// Delivery Apps (التطبيقات مع الإتاحة من Supabase)
+// Delivery Apps
 // ============================================================
 const APPS_BASE = [
   { id: "hungerstation", name: "هنقرستيشن (HungerStation)", description: "المنصة الأكبر والأكثر طلباً بالمملكة مع بونص يومي مجزٍ", logo: "🍔", color: "from-amber-500 to-amber-600", textColor: "text-amber-500" },
@@ -86,7 +86,7 @@ app.get("/api/delivery-apps", async (req, res) => {
 });
 
 // ============================================================
-// Register Courier (تسجيل مندوب جديد)
+// Register Courier
 // ============================================================
 app.post("/api/register", async (req, res) => {
   try {
@@ -116,7 +116,31 @@ app.post("/api/register", async (req, res) => {
 });
 
 // ============================================================
-// Lookup Courier (استعلام عن مندوب)
+// Schedule Interview
+// ============================================================
+app.post("/api/schedule", async (req, res) => {
+  try {
+    const { courierId, interviewDate, interviewTime } = req.body;
+    if (!courierId || !interviewDate || !interviewTime)
+      return res.status(400).json({ success: false, error: "بيانات الجدولة غير مكتملة" });
+    const data = await db("couriers", "PATCH",
+      {
+        interview_date: interviewDate,
+        interview_time: interviewTime,
+        status: "تمت المقابلة",
+        updated_at: new Date().toISOString(),
+      },
+      `id=eq.${courierId}`
+    );
+    const courier = Array.isArray(data) ? data[0] : data;
+    res.json({ success: true, courier });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ============================================================
+// Lookup Courier
 // ============================================================
 app.post("/api/couriers/lookup", async (req, res) => {
   try {
