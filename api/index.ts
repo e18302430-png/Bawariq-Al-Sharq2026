@@ -30,7 +30,6 @@ async function db(table, method, body, query) {
   return text ? JSON.parse(text) : [];
 }
 
-// CORS
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -39,22 +38,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve frontend
 const distPath = path.join(__dirname, "..", "dist");
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
 
-// ============================================================
-// Health Check
-// ============================================================
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", database: "supabase", timestamp: new Date().toISOString() });
 });
 
-// ============================================================
-// Delivery Apps
-// ============================================================
 const APPS_BASE = [
   { id: "hungerstation", name: "هنقرستيشن (HungerStation)", description: "المنصة الأكبر والأكثر طلباً بالمملكة مع بونص يومي مجزٍ", logo: "🍔", color: "from-amber-500 to-amber-600", textColor: "text-amber-500" },
   { id: "toyou", name: "تويو (ToYou)", description: "نمو متسارع وطلبات مستمرة وتغطية كافة أنحاء المدن الرئيسية", logo: "🚗", color: "from-red-500 to-red-600", textColor: "text-red-500" },
@@ -85,9 +77,6 @@ app.get("/api/delivery-apps", async (req, res) => {
   }
 });
 
-// ============================================================
-// Register Courier
-// ============================================================
 app.post("/api/register", async (req, res) => {
   try {
     const b = req.body;
@@ -115,9 +104,6 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// ============================================================
-// Schedule Interview
-// ============================================================
 app.post("/api/schedule", async (req, res) => {
   try {
     const { courierId, interviewDate, interviewTime } = req.body;
@@ -128,7 +114,6 @@ app.post("/api/schedule", async (req, res) => {
         interview_date: interviewDate,
         interview_time: interviewTime,
         status: "تمت المقابلة",
-        updated_at: new Date().toISOString(),
       },
       `id=eq.${courierId}`
     );
@@ -139,9 +124,6 @@ app.post("/api/schedule", async (req, res) => {
   }
 });
 
-// ============================================================
-// Lookup Courier
-// ============================================================
 app.post("/api/couriers/lookup", async (req, res) => {
   try {
     const { query } = req.body;
@@ -158,9 +140,6 @@ app.post("/api/couriers/lookup", async (req, res) => {
   }
 });
 
-// ============================================================
-// Couriers CRUD
-// ============================================================
 app.get("/api/couriers", async (req, res) => {
   try {
     res.json(await db("couriers", "GET", undefined, "order=created_at.desc"));
@@ -194,9 +173,7 @@ app.post("/api/couriers", async (req, res) => {
 
 app.patch("/api/couriers/:id", async (req, res) => {
   try {
-    const data = await db("couriers", "PATCH",
-      { ...req.body, updated_at: new Date().toISOString() },
-      `id=eq.${req.params.id}`);
+    const data = await db("couriers", "PATCH", req.body, `id=eq.${req.params.id}`);
     res.json(Array.isArray(data) ? data[0] : data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -208,9 +185,6 @@ app.delete("/api/couriers/:id", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ============================================================
-// Support Tickets
-// ============================================================
 app.get("/api/tickets", async (req, res) => {
   try {
     res.json(await db("support_tickets", "GET", undefined, "order=created_at.desc"));
@@ -242,16 +216,11 @@ app.post("/api/tickets", async (req, res) => {
 
 app.patch("/api/tickets/:id", async (req, res) => {
   try {
-    const data = await db("support_tickets", "PATCH",
-      { ...req.body, updated_at: new Date().toISOString() },
-      `id=eq.${req.params.id}`);
+    const data = await db("support_tickets", "PATCH", req.body, `id=eq.${req.params.id}`);
     res.json(Array.isArray(data) ? data[0] : data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ============================================================
-// App Settings
-// ============================================================
 app.get("/api/settings", async (req, res) => {
   try {
     const data = await db("app_settings", "GET");
@@ -277,9 +246,6 @@ app.patch("/api/settings/:id", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ============================================================
-// Stats
-// ============================================================
 app.get("/api/stats", async (req, res) => {
   try {
     const couriers = await db("couriers", "GET");
@@ -297,9 +263,6 @@ app.get("/api/stats", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ============================================================
-// Catch-all frontend
-// ============================================================
 app.get("*", (req, res) => {
   const indexPath = path.join(__dirname, "..", "dist", "index.html");
   if (fs.existsSync(indexPath)) {
