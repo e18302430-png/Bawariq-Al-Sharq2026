@@ -13,6 +13,8 @@ app.use(express.urlencoded({ extended: true }));
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://gsvodabvuodhqgozisbq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdzdm9kYWJ2dW9kaHFnb3ppc2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MTY3MjYsImV4cCI6MjA5NTE5MjcyNn0.v_kZqy-bWDtbl8pAGW3qcpNh5JGpiAshbpiY9u3uxWA";
 const ADMIN_PASSWORD = "bawariq2026";
+const APP_URL = process.env.APP_URL || "https://bawariq-al-sharq2026.vercel.app";
+const N8N_WEBHOOK = process.env.N8N_WEBHOOK || "";
 
 async function db(table, method, body, query) {
   const url = `${SUPABASE_URL}/rest/v1/${table}${query ? "?" + query : ""}`;
@@ -133,6 +135,21 @@ app.post("/api/register", async (req, res) => {
       interview_date: "", interview_time: "", admin_notes: "",
     });
     const courier = Array.isArray(data) ? data[0] : data;
+
+    // إشعار n8n عند تسجيل مندوب جديد
+    if (N8N_WEBHOOK) {
+      fetch(N8N_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "new_courier",
+          courier: mapCourier(courier),
+          profileUrl: `${APP_URL}/courier/${courier.id}`,
+          timestamp: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+    }
+
     res.status(201).json({ success: true, courierId: courier.id, courier: mapCourier(courier) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
@@ -163,12 +180,75 @@ app.post("/api/couriers/lookup", async (req, res) => {
 });
 
 // ============================================================
+// QR - صفحة بيانات المندوب
+// ============================================================
+app.get("/api/courier-profile/:id", async (req, res) => {
+  try {
+    const data = await db("couriers", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!data.length) return res.status(404).json({ error: "المندوب غير موجود" });
+    res.json({ success: true, courier: mapCourier(data[0]) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/courier/:id", async (req, res) => {
+  try {
+    const data = await db("couriers", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!data.length) return res.status(404).send("<h1 style='font-family:Arial;text-align:center;margin-top:50px'>المندوب غير موجود</h1>");
+    const c = data[0];
+    const statusColor = c.status === "تم التفعيل" ? "#10b981" : c.status === "تمت المقابلة" ? "#06b6d4" : "#f59e0b";
+    res.send(`<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>بطاقة المندوب - ${c.name}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.card { background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
+.logo { font-size: 12px; color: #64748b; margin-bottom: 20px; letter-spacing: 2px; }
+.avatar { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #f59e0b, #d97706); display: flex; align-items: center; justify-content: center; font-size: 36px; margin: 0 auto 16px; }
+.name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+.city { font-size: 13px; color: #94a3b8; margin-bottom: 16px; }
+.status { display: inline-block; padding: 6px 18px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-bottom: 24px; background: ${statusColor}22; color: ${statusColor}; border: 1px solid ${statusColor}44; }
+.info-box { background: #0f172a; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+.info-row:last-child { border-bottom: none; }
+.info-label { color: #64748b; }
+.info-value { color: #e2e8f0; font-weight: 600; }
+.apps { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 16px 0; }
+.app-tag { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.footer { font-size: 11px; color: #475569; margin-top: 16px; }
+.verified { color: #10b981; font-size: 12px; margin-top: 8px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🚀 بوارق الشرق للخدمات اللوجستية</div>
+  <div class="avatar">🛵</div>
+  <div class="name">${c.name}</div>
+  <div class="city">📍 ${c.city}</div>
+  <div class="status">${c.status || "جديد"}</div>
+  <div class="info-box">
+    <div class="info-row"><span class="info-label">موعد المقابلة</span><span class="info-value">${c.interview_date ? c.interview_date.split(" (")[0] : "لم يحدد بعد"}</span></div>
+    <div class="info-row"><span class="info-label">الوقت</span><span class="info-value">${c.interview_time || "—"}</span></div>
+    <div class="info-row"><span class="info-label">تاريخ التسجيل</span><span class="info-value">${new Date(c.created_at).toLocaleDateString("ar-SA")}</span></div>
+  </div>
+  <div class="apps">${(c.apps || []).map(a => `<span class="app-tag">${a.toUpperCase()}</span>`).join("") || "<span style='color:#475569;font-size:12px'>لا توجد تطبيقات</span>"}</div>
+  <div class="footer">رقم التعريف: ${c.id.substring(0, 8).toUpperCase()}</div>
+  <div class="verified">✓ موثق من بوارق الشرق</div>
+</div>
+</body>
+</html>`);
+  } catch (e) { res.status(500).send("<h1>حدث خطأ</h1>"); }
+});
+
+// ============================================================
 // Admin Endpoints
 // ============================================================
 app.post("/api/admin/couriers", async (req, res) => {
   try {
-    if (!checkAdmin(req.body.password))
-      return res.status(403).json({ success: false, error: "كلمة المرور غير صحيحة" });
+    if (!checkAdmin(req.body.password)) return res.status(403).json({ success: false, error: "كلمة المرور غير صحيحة" });
     const data = await db("couriers", "GET", undefined, "order=created_at.desc");
     res.json({ success: true, couriers: data.map(mapCourier) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
@@ -189,12 +269,9 @@ app.post("/api/admin/update-profile", async (req, res) => {
     const { password, courierId, nationalId, iban, carPlate, vehicleModel, appCourierCode, activationDate, adminNotes } = req.body;
     if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
     const data = await db("couriers", "PATCH", {
-      national_id: nationalId || "",
-      iban: iban || "",
-      car_plate: carPlate || "",
-      vehicle_model: vehicleModel || "",
-      app_courier_code: appCourierCode || "",
-      activation_date: activationDate || "",
+      national_id: nationalId || "", iban: iban || "",
+      car_plate: carPlate || "", vehicle_model: vehicleModel || "",
+      app_courier_code: appCourierCode || "", activation_date: activationDate || "",
       admin_notes: adminNotes || "",
     }, `id=eq.${courierId}`);
     const courier = Array.isArray(data) ? data[0] : data;
@@ -245,7 +322,7 @@ app.get("/api/admin/download-csv", async (req, res) => {
     const { auth } = req.query;
     if (!checkAdmin(auth)) return res.status(403).send("غير مصرح");
     const couriers = await db("couriers", "GET", undefined, "order=created_at.desc");
-    const headers = ["الاسم", "الجوال", "المدينة", "الهوية", "التطبيقات", "الحالة", "موعد المقابلة", "وقت المقابلة", "IBAN", "المركبة", "اللوحة", "كود التطبيق", "تاريخ التفعيل", "الملاحظات", "تاريخ التسجيل"];
+    const headers = ["الاسم","الجوال","المدينة","الهوية","التطبيقات","الحالة","موعد المقابلة","وقت المقابلة","IBAN","المركبة","اللوحة","كود التطبيق","تاريخ التفعيل","الملاحظات","تاريخ التسجيل"];
     const rows = couriers.map(c => [
       c.name, c.phone, c.city, c.national_id || "",
       (c.apps || []).join(" - "), c.status || "جديد",
@@ -284,23 +361,20 @@ app.post("/api/tickets", async (req, res) => {
 
 app.post("/api/support/tickets/:id/messages", async (req, res) => {
   try {
-    const { sender, text, password } = req.body;
+    const { sender, text } = req.body;
     const ticketData = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
     if (!ticketData.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
     const ticket = ticketData[0];
     const messages = ticket.messages || [];
     messages.push({ sender: sender || "user", text, createdAt: new Date().toISOString() });
     const newStatus = sender === "admin" ? "تم الرد" : "قيد المتابعة";
-    const data = await db("support_tickets", "PATCH",
-      { messages, status: newStatus },
-      `id=eq.${req.params.id}`
-    );
+    const data = await db("support_tickets", "PATCH", { messages, status: newStatus }, `id=eq.${req.params.id}`);
     res.json({ success: true, ticket: mapTicket(Array.isArray(data) ? data[0] : data) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ============================================================
-// Settings
+// Settings & Stats
 // ============================================================
 app.get("/api/settings", async (req, res) => {
   try {
@@ -327,9 +401,6 @@ app.patch("/api/settings/:id", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ============================================================
-// Stats
-// ============================================================
 app.get("/api/stats", async (req, res) => {
   try {
     const couriers = await db("couriers", "GET");
