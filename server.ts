@@ -53,7 +53,7 @@ app.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "الرجاء تعبئة جميع الحقول المطلوبة (الاسم، الجوال، المدينة)" });
     }
 
-    const id = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+    const id = crypto.randomUUID();
 
     const newCourier = {
       id,
@@ -73,8 +73,9 @@ app.post("/api/register", async (req, res) => {
       admin_notes: ""
     };
 
-    await supabaseQuery("couriers", "POST", newCourier);
-    res.json({ success: true, courierId: id });
+    const result = await supabaseQuery("couriers", "POST", newCourier);
+    const savedId = result?.[0]?.id || id;
+    res.json({ success: true, courierId: savedId });
   } catch (error: any) {
     console.error("Register error:", error.message);
     res.status(500).json({ error: "فشل حفظ البيانات: " + error.message });
