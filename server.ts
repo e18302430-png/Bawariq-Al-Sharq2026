@@ -217,7 +217,7 @@ function writeCouriersFile(couriers: Courier[]) {
 }
 
 // Custom fast HTTP fetcher with abort timeout to avoid hanging serverless threads
-async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000) {
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 15000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -231,29 +231,119 @@ async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 4000
   }
 }
 
+// Highly reliable Firestore REST client request execution wrapper with auto-fallbacks
+async function callFirestoreREST(
+  collectionPath: string,
+  method: "POST" | "PATCH" | "DELETE" | "GET",
+  body: any,
+  subPathSuffix: string = "" // e.g. ":runQuery" or "/someDocumentId"
+): Promise<any> {
+  if (!firestoreRest) {
+    throw new Error("Firestore REST client not configured");
+  }
+
+  const { projectId, databaseId, apiKey } = firestoreRest;
+
+  // Let's check status-safe response body parser
+  const parseResponse = async (res: Response) => {
+    const contentType = res.headers.get("content-type");
+    if (res.status === 204) return {};
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        return await res.json();
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+
+  // Attempt with primary database id
+  let currentDbId = databaseId;
+  let url = subPathSuffix.startsWith(":")
+    ? `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents${subPathSuffix}?key=${apiKey}`
+    : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents/${collectionPath}${subPathSuffix}?key=${apiKey}`;
+
+  try {
+    const res = await fetchWithTimeout(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined
+    }, 15000);
+
+    if (res.ok) {
+      return await parseResponse(res);
+    }
+
+    const errText = await res.text();
+    console.warn(`[Firestore Alert] Direct DB ID "${currentDbId}" failed (Status ${res.status}): ${errText}`);
+
+    // If database or document is not found, or access issues, and not default DB yet, retry using default databaseId "(default)"
+    if (currentDbId !== "(default)" && (res.status === 404 || res.status === 403 || res.status === 400 || res.status === 401)) {
+      console.log(`♻️ [Firestore REST Fallback] Retrying operational token under default database ID "(default)"...`);
+      currentDbId = "(default)";
+      url = subPathSuffix.startsWith(":")
+        ? `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents${subPathSuffix}?key=${apiKey}`
+        : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents/${collectionPath}${subPathSuffix}?key=${apiKey}`;
+
+      const retryRes = await fetchWithTimeout(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined
+      }, 15000);
+
+      if (retryRes.ok) {
+        // Cache successful fallback DB ID in memory so we don't need to cycle it repeatedly
+        firestoreRest.databaseId = "(default)";
+        console.log(`✅ [Firestore REST Fallback] Successfully connected to default database. Persistent cached.`);
+        return await parseResponse(retryRes);
+      }
+
+      const retryError = await retryRes.text();
+      throw new Error(`Firestore default DB fallback retry failed: ${retryError}`);
+    } else {
+      throw new Error(`Firestore REST error: ${errText}`);
+    }
+  } catch (error: any) {
+    // If request timed out, aborted, or had a TCP issue and we haven't checked default DB yet, try as ultimate failover
+    if (currentDbId !== "(default)") {
+      console.warn(`[Firestore Alert] Network issue on primary DB ID "${currentDbId}". Attempting default failover retry...`, error.message);
+      currentDbId = "(default)";
+      url = subPathSuffix.startsWith(":")
+        ? `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents${subPathSuffix}?key=${apiKey}`
+        : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents/${collectionPath}${subPathSuffix}?key=${apiKey}`;
+
+      try {
+        const retryRes = await fetchWithTimeout(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined
+        }, 15000);
+
+        if (retryRes.ok) {
+          firestoreRest.databaseId = "(default)";
+          console.log(`✅ [Firestore REST Failover] Restored connection to default database successfully.`);
+          return await parseResponse(retryRes);
+        }
+      } catch (retryErr: any) {
+        console.error(`Firestore REST double-fault failure:`, retryErr.message);
+      }
+    }
+    throw error;
+  }
+}
+
 async function readAllCouriers(): Promise<Courier[]> {
   const localList = readCouriersFile();
   if (firestoreRest) {
     try {
-      const { projectId, databaseId, apiKey } = firestoreRest;
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents:runQuery?key=${apiKey}`;
       const payload = {
         structuredQuery: {
           from: [{ collectionId: "couriers" }]
         }
       };
-      const res = await fetchWithTimeout(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }, 3500);
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`REST Fetch Error Status: ${res.status} - Response: ${errText}`);
-      }
       
-      const data = await res.json();
+      const data = await callFirestoreREST("couriers", "POST", payload, ":runQuery");
       const firestoreList: Courier[] = [];
       const queryResults = Array.isArray(data) ? data : [];
 
@@ -309,8 +399,8 @@ async function readAllCouriers(): Promise<Courier[]> {
       const mergedList = Array.from(mergedMap.values());
       writeCouriersFile(mergedList);
       return mergedList;
-    } catch (error) {
-      console.warn("Firestore collection fetch failed (REST), querying local JSON fallback.", error);
+    } catch (error: any) {
+      console.error("Firestore collection fetch failed (REST), querying local JSON fallback.", error.message);
       return localList;
     }
   }
@@ -331,9 +421,6 @@ async function saveCourier(courier: Courier) {
   // 2. Write to Firestore permanently
   if (firestoreRest) {
     try {
-      const { projectId, databaseId, apiKey } = firestoreRest;
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/couriers/${courier.id}?key=${apiKey}`;
-      
       const fields: any = {};
       const rawObj: any = {
         name: courier.name,
@@ -358,19 +445,10 @@ async function saveCourier(courier: Courier) {
         fields[key] = toFirestoreValue(rawObj[key]);
       }
 
-      const res = await fetchWithTimeout(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields })
-      }, 3500);
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`REST Patch status: ${res.status} - ${errText}`);
-      }
+      await callFirestoreREST("couriers", "PATCH", { fields }, `/${courier.id}`);
       console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore REST.`);
-    } catch (e) {
-      console.warn("Failed to synchronize to Firestore REST, stored locally.", e);
+    } catch (e: any) {
+      console.error("Failed to synchronize to Firestore REST, stored locally.", e.message);
     }
   }
 }
@@ -384,15 +462,10 @@ async function deleteCourier(id: string) {
   // 2. Delete from Firestore
   if (firestoreRest) {
     try {
-      const { projectId, databaseId, apiKey } = firestoreRest;
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/couriers/${id}?key=${apiKey}`;
-      const res = await fetchWithTimeout(url, { method: "DELETE" }, 3500);
-      if (!res.ok) {
-        throw new Error(`REST Delete Error Status: ${res.status}`);
-      }
+      await callFirestoreREST("couriers", "DELETE", null, `/${id}`);
       console.log(`Document ${id} successfully deleted from Cloud Firestore REST.`);
-    } catch (e) {
-      console.warn("Failed to delete document from Firestore REST.", e);
+    } catch (e: any) {
+      console.error("Failed to delete document from Firestore REST.", e.message);
     }
   }
 }
@@ -401,25 +474,13 @@ async function readAllTickets(): Promise<SupportTicket[]> {
   const localList = readTicketsFile();
   if (firestoreRest) {
     try {
-      const { projectId, databaseId, apiKey } = firestoreRest;
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents:runQuery?key=${apiKey}`;
       const payload = {
         structuredQuery: {
           from: [{ collectionId: "support_tickets" }]
         }
       };
-      const res = await fetchWithTimeout(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }, 3500);
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`REST Tickets Fetch Error Status: ${res.status} - Response: ${errText}`);
-      }
       
-      const data = await res.json();
+      const data = await callFirestoreREST("support_tickets", "POST", payload, ":runQuery");
       const firestoreList: SupportTicket[] = [];
       const queryResults = Array.isArray(data) ? data : [];
 
@@ -466,8 +527,8 @@ async function readAllTickets(): Promise<SupportTicket[]> {
       const mergedList = Array.from(mergedMap.values());
       writeTicketsFile(mergedList);
       return mergedList;
-    } catch (error) {
-      console.warn("Firestore support collection fetch failed (REST), querying local fallback.", error);
+    } catch (error: any) {
+      console.error("Firestore support collection fetch failed (REST), querying local fallback.", error.message);
       return localList;
     }
   }
@@ -488,9 +549,6 @@ async function saveSupportTicket(ticket: SupportTicket) {
   // 2. Synchronize to Firestore
   if (firestoreRest) {
     try {
-      const { projectId, databaseId, apiKey } = firestoreRest;
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/support_tickets/${ticket.id}?key=${apiKey}`;
-      
       const fields: any = {};
       const rawObj: any = {
         courierName: ticket.courierName,
@@ -507,19 +565,10 @@ async function saveSupportTicket(ticket: SupportTicket) {
         fields[key] = toFirestoreValue(rawObj[key]);
       }
 
-      const res = await fetchWithTimeout(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields })
-      }, 3500);
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`REST Ticket Patch Status: ${res.status} - ${errText}`);
-      }
+      await callFirestoreREST("support_tickets", "PATCH", { fields }, `/${ticket.id}`);
       console.log(`Support ticket ${ticket.id} synchronized to Firestore REST.`);
-    } catch (e) {
-      console.warn("Failed to sync ticket to Firestore (REST):", e);
+    } catch (e: any) {
+      console.error("Failed to sync ticket to Firestore (REST):", e.message);
     }
   }
 }
