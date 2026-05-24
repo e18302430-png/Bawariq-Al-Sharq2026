@@ -8,9 +8,16 @@ const PORT = 3000;
 // Enable JSON parsing
 app.use(express.json());
 
-// Detect serverless environment to direct backups to standard writable directory
-const isServerless = !!process.env.VERCEL || !!process.env.LAMBDA_TASK_ROOT || !!process.env.AWS_EXECUTION_ENV;
-const DATA_DIR = isServerless ? "/tmp" : path.join(process.cwd(), "data");
+// Detect writeable data directory dynamically
+let DATA_DIR = path.join(process.cwd(), "data");
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  DATA_DIR = "/tmp";
+}
+
 const DATA_FILE = path.join(DATA_DIR, "couriers.json");
 const TICKETS_FILE = path.join(DATA_DIR, "support_tickets.json");
 const DEBUG_LOG_FILE = path.join(DATA_DIR, "debug.log");
@@ -834,7 +841,11 @@ app.post("/api/support/search", async (req, res) => {
     }
 
     const tickets = await readAllTickets();
-    const matched = tickets.filter(t => t.courierPhone === phone || t.courierPhone.replace(/^0/, "") === phone.replace(/^0/, ""));
+    const matched = tickets.filter(t => {
+      const p = t.courierPhone || "";
+      const searchP = phone || "";
+      return p === searchP || p.replace(/^0/, "") === searchP.replace(/^0/, "");
+    });
     res.json({ success: true, tickets: matched });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -954,12 +965,6 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 async function start() {
-  // If running in a Serverless environment, don't boot standalone listeners
-  if (isServerless) {
-    console.log("⚡ Running on Serverless Environment. Standalone listeners bypassed.");
-    return;
-  }
-
   // Vite integration
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
