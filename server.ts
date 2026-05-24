@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { Firestore } from "@google-cloud/firestore";
 
 const app = express();
 const PORT = 3000;
@@ -11,7 +10,8 @@ app.use(express.json());
 
 // Detect writeable data directory dynamically (use /tmp in production/serverless)
 let DATA_DIR = "/tmp";
-if (process.env.NODE_ENV !== "production") {
+const isProductionLike = process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || !fs.existsSync(path.join(process.cwd(), "data"));
+if (!isProductionLike) {
   DATA_DIR = path.join(process.cwd(), "data");
 }
 
@@ -189,7 +189,7 @@ let firestoreRest: {
   apiKey: string;
 } | null = null;
 
-let firestoreClient: Firestore | null = null;
+let firestoreClient: any = null;
 
 try {
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
@@ -201,15 +201,7 @@ try {
       apiKey: config.apiKey
     };
     console.log(`⚡ Firestore REST Client configured. Project: ${config.projectId}, DB: ${config.firestoreDatabaseId}`);
-
-    firestoreClient = new Firestore({
-      projectId: config.projectId,
-      databaseId: config.firestoreDatabaseId || "(default)"
-    });
-    console.log(`⚡ Native Firestore Client initialized for project ${config.projectId}, DB: ${config.firestoreDatabaseId}`);
   } else {
-    firestoreClient = new Firestore();
-    console.log("⚡ Native Firestore Client initialized with default credentials.");
     console.warn("⚠️ No firebase-applet-config.json found. Running on fallback local file database.");
   }
 } catch (e: any) {

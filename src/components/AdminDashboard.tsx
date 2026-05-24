@@ -48,7 +48,14 @@ export default function AdminDashboard() {
   const [sendingReply, setSendingReply] = useState(false);
 
   // App dynamic settings configurations
-  const [appSettings, setAppSettings] = useState<Record<string, any>>({});
+  const [appSettings, setAppSettings] = useState<Record<string, any>>({
+    hungerstation: { id: "hungerstation", name: "هنقرستيشن (HungerStation)", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    toyou: { id: "toyou", name: "تويو (ToYou)", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    keeta: { id: "keeta", name: "كيتا (Keeta)", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    thechefs: { id: "thechefs", name: "ذا شفز (The Chefs)", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    mrsool: { id: "mrsool", name: "مرسول (Mrsool)", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    jahez: { id: "jahez", name: "جاهز (Jahez)", isAvailable: true, region: "مستوى المملكة", warningMessage: "" }
+  });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSavingId, setSettingsSavingId] = useState<string | null>(null);
 
