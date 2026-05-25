@@ -6,12 +6,6 @@
       "maxDuration": 30
     }
   },
-  "builds": [
-    {
-      "src": "api/index.ts",
-      "use": "@vercel/node"
-    }
-  ],
   "routes": [
     {
       "src": "/api/(.*)",
