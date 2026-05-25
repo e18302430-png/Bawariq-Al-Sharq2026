@@ -1,24 +1,28 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
   "functions": {
     "api/index.ts": {
       "memory": 1024,
       "maxDuration": 30
     }
   },
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "/api/index.ts"
     },
     {
-      "src": "^/assets/(.*)",
-      "dest": "/dist/assets/$1"
+      "src": "/courier/(.*)",
+      "dest": "/api/index.ts"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
-      "dest": "/api/index.ts"
+      "dest": "/index.html"
     }
   ]
 }
