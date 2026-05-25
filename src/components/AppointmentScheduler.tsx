@@ -196,6 +196,28 @@ export default function AppointmentScheduler({ courierId, courierName, onSuccess
         </div>
       </div>
 
+      {/* Online Interview Promotion Banner */}
+      <div className="bg-gradient-to-r from-amber-500/10 via-slate-900/60 to-slate-950 border border-amber-500/25 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="space-y-1 text-right">
+          <span className="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-black tracking-wider uppercase animate-pulse inline-block mb-1">توجيه ذكي: تفعيل أونلاين عن بعد 🖥️</span>
+          <h4 className="text-sm font-extrabold text-white">هل تفضل إجراء المقابلة والاتصال أونلاين مع مشرف الدعم؟</h4>
+          <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
+            إذا كنت لا تستطيع زيارة مقرنا بالدمام، تتيح لك بوارق الشرق حجز مقابلة مرئية أونلاين وتحميل مستنداتك وتنشيط حساباتك الميدانية بالكامل بالتواصل المباشر مع دعم التفعيل.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.setItem("bawariq_auto_select_issue", "online_interview");
+            window.location.hash = "#support";
+            alert("تم إعداد طلبك للمقابلة أونلاين بنجاح! 💻\nتم توجيهك الآن إلى بوابة الدعم الفني المباشر، يرجى كتابة اسمك وإرسال التذكرة ليقوم المشرف ببدء المقابلة وتحديد الموعد معك مباشرة.");
+          }}
+          className="w-full md:w-auto px-5 py-3.5 bg-slate-900 hover:bg-slate-850 hover:border-slate-705 border border-amber-500/30 text-amber-400 font-extrabold rounded-xl transition-all text-xs shrink-0 flex items-center justify-center gap-2"
+        >
+          <span>طلب مقابلة أونلاين وتحديد موعد مع الدعم 🌐</span>
+        </button>
+      </div>
+
       {/* Date & Time Selection Stage */}
       <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 space-y-6">
         <div>

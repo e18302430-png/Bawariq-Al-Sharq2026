@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { DELIVERY_APPS, SAUDI_CITIES, EXPERIENCE_LEVELS } from "../data";
-import { User, Phone, MapPin, Briefcase, Check, ArrowLeft, ArrowRight, Loader2, Landmark, Fingerprint, AlertTriangle } from "lucide-react";
+import { User, Phone, MapPin, Briefcase, Check, ArrowLeft, ArrowRight, Loader2, Landmark, Fingerprint, AlertTriangle, Users } from "lucide-react";
 
 interface RegistrationFormProps {
-  onSuccess: (courierId: string, info: { name: string; phone: string; city: string; apps: string[]; nationalId?: string }) => void;
+  onSuccess: (courierId: string, info: { name: string; phone: string; city: string; apps: string[]; nationalId?: string; supervisorId?: string; supervisorName?: string; supervisorPhone?: string }) => void;
 }
 
 function convertArabicNumerals(str: string): string {
@@ -31,6 +31,10 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
   const [deliveryApps, setDeliveryApps] = useState<any[]>(DELIVERY_APPS);
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
   
+  // Dynamic supervisors list loaded from backend
+  const [supervisors, setSupervisors] = useState<any[]>([]);
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState("direct");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -43,6 +47,15 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
         }
       })
       .catch((err) => console.warn("Failed loading live delivery apps catalog:", err));
+
+    fetch("/api/supervisors")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setSupervisors(data);
+        }
+      })
+      .catch((err) => console.warn("Failed loading live supervisors:", err));
   }, []);
 
   const handleAppToggle = (appId: string) => {
@@ -128,6 +141,7 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
     }
 
     const finalExperience = `${experience} ${customExperience ? ` - ملاحظات إضافية: ${customExperience}` : ""}`;
+    const chosenSup = supervisors.find(s => s.id === selectedSupervisorId) || { id: "direct", name: "تسجيل مباشر (بدون مشرف)", phone: "0599612490" };
 
     try {
       const response = await fetch("/api/register", {
@@ -142,6 +156,9 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
           city: finalCity,
           experience: finalExperience,
           apps: selectedApps,
+          supervisorId: chosenSup.id,
+          supervisorName: chosenSup.name,
+          supervisorPhone: chosenSup.phone || "0599612490",
         }),
       });
 
@@ -169,6 +186,9 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
         city: finalCity,
         apps: selectedApps,
         nationalId: normalizedNationalId,
+        supervisorId: chosenSup.id,
+        supervisorName: chosenSup.name,
+        supervisorPhone: chosenSup.phone || "0599612490",
       });
     } catch (err: any) {
       setError(err.message || "حدث خطأ في الاتصال بالخادم الرئيسي. الرجاء المحاولة مجدداً.");
@@ -332,6 +352,31 @@ export default function RegistrationForm({ onSuccess }: RegistrationFormProps) {
             rows={2}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all font-medium"
           />
+        </div>
+
+        {/* Supervisor Selection Field */}
+        <div className="space-y-2 border-t border-slate-800/60 pt-5 mt-4">
+          <label className="text-xs font-bold text-slate-350 text-slate-200 flex items-center gap-1.5">
+            <Users className="w-4 h-4 text-amber-550" />
+            <span>اختر المشرف المتابع لطلبك (لتسريع عملية تفعيل هويتك) <span className="text-slate-500 font-normal">(اختياري)</span></span>
+          </label>
+          <div className="relative">
+            <select
+              value={selectedSupervisorId}
+              onChange={(e) => setSelectedSupervisorId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500 transition-all cursor-pointer font-medium"
+            >
+              <option value="direct" className="bg-slate-950 text-slate-300">تنظيم مباشر (بدون مشرف)</option>
+              {supervisors.filter(s => s.id !== "direct").map((s) => (
+                <option key={s.id} value={s.id} className="bg-slate-950 text-white">
+                  {s.name} {s.phone ? `(${s.phone})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">
+            💡 باختيارك لمشرف مختص، ستصله إشعارات حجز الموعد وتوقيع الوثيقة مباشرة ليقوم بالتنسيق معك وتنشيط يوزرك بسرعة قصوى.
+          </p>
         </div>
       </div>
 

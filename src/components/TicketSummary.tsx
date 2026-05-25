@@ -22,6 +22,7 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
   const [appCode, setAppCode] = React.useState<string>("");
   const [notes, setNotes] = React.useState<string>("");
   const [loading, setLoading] = React.useState<boolean>(false);
+  const [courierObj, setCourierObj] = React.useState<any>(null);
 
   const fetchLiveStatus = async () => {
     if (!courierId) return;
@@ -38,6 +39,7 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
         }
         if (data && data.success && data.courier) {
           const c = data.courier;
+          setCourierObj(c);
           setLocalStatus(c.status || "جديد");
           if (c.interviewDate) setLocalDate(c.interviewDate);
           if (c.interviewTime) setLocalTime(c.interviewTime);
@@ -222,6 +224,90 @@ export default function TicketSummary({ courierId, info, scheduledDate, schedule
               <Navigation className="w-3.5 h-3.5" />
               <span>افتح في خرائط Google 🗺️</span>
             </a>
+          </div>
+
+          {/* Real-time WhatsApp Verification action card */}
+          <div className="bg-gradient-to-br from-emerald-500/10 via-slate-900/60 to-slate-950 border border-emerald-500/35 rounded-2xl p-6 space-y-5">
+            <div className="flex gap-4 items-start">
+              <div className="p-3 rounded-2xl bg-emerald-500 text-slate-950 shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse flex items-center justify-center">
+                {/* Custom styled chat symbol */}
+                <svg viewBox="0 0 24 24" className="w-5.5 h-5.5 fill-current">
+                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.5-5.739-1.446L0 24zm6.59-4.846c1.6.95 3.1 1.4 4.8 1.4 5.3 0 9.7-4.3 9.7-9.7s-4.3-9.7-9.7-9.7-9.7 4.3-9.7 9.7c0 2 .5 3.7 1.6 5.2l-.9 3.4 3.5-.9zM16.5 13.5c-.3-.1-1.7-.8-1.9-.9-.3-.1-.5-.1-.7.2-.2.3-.8.9-1 .1-.2-.2-.3-.5-.3-.5s-1.1-1.7-1.7-2.7c-.5-.9-.1-1.3.1-1.4.2-.1.4-.4.5-.5s.2-.3.3-.5c.1-.2 0-.4 0-.5s-.7-1.7-1-2.4c-.3-.7-.6-.6-.8-.6h-.6c-.2 0-.5.1-.8.4-1 1-1.5 2.4-1.5 3.9 0 3.1 2.3 6 2.6 6.4.3.4 4.5 6.9 10.9 9.6 1.5.6 2.7 1 3.6 1.3 1.5.5 2.9.4 4-.1 1.2-.2 2.5-.8 2.8-1.6s.3-1.5.2-1.6c-.1-.1-.4-.3-.9-.6z" />
+                </svg>
+              </div>
+              <div className="space-y-1 text-right">
+                <span className="text-[10px] bg-emerald-500 text-slate-900 px-2.5 py-0.5 rounded font-black tracking-wider uppercase inline-block mb-1">هام جداً: التفعيل الفوري إلكترونياً ⚡</span>
+                <h4 className="text-sm font-extrabold text-white">إرسال عبارة "جاهز لاستلام اليوزر" للبدء المباشر واستلام يوزرك!</h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  يتطلب منك الآن وبطريقة آلية سريعة إرسال رسالة واتساب بعبارة <strong className="text-emerald-400">جاهز لاستلام اليوزر</strong> إلى رقم المشرف الخاص بك، مع إرفاق الهوية والرخصة والاستمارة لتنشيط حسابك فوراً.
+                </p>
+              </div>
+            </div>
+
+            {/* Document details box */}
+            <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 space-y-3">
+              <span className="text-xs font-bold text-slate-200 block border-b border-slate-900 pb-1.5">📂 يرجى إرفاق المستندات التالية فور فتح الشات في الواتساب:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] text-slate-400 font-semibold">
+                <div className="flex items-center gap-1.5 bg-slate-900/40 p-2.5 rounded-lg border border-slate-900">
+                  <span className="text-emerald-400 font-extrabold text-xs">✓</span>
+                  <span>صورة الهوية الوطنية / الإقامة</span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-slate-900/40 p-2.5 rounded-lg border border-slate-900">
+                  <span className="text-emerald-400 font-extrabold text-xs">✓</span>
+                  <span>صورة رخصة القيادة السارية</span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-slate-900/40 p-2.5 rounded-lg border border-slate-900">
+                  <span className="text-emerald-400 font-extrabold text-xs">✓</span>
+                  <span>صورة استمارة السيارة</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Clipboard Copy Cells */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 bg-slate-950 border border-slate-900 rounded-xl p-3 flex justify-between items-center">
+                <span className="text-xs text-slate-400 font-bold">العبارة المفتاحية للإرسال:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-amber-400 bg-amber-400/10 px-3 py-1 rounded-lg">جاهز لاستلام اليوزر</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText("جاهز لاستلام اليوزر");
+                      alert("تم نسخ العبارة المفتاحية 'جاهز لاستلام اليوزر' بنجاح! 📋");
+                    }}
+                    className="p-1.5 text-slate-500 hover:text-white bg-slate-900 rounded-md hover:border-slate-800 border border-slate-950 transition-colors text-[10px] font-bold"
+                  >
+                    نسخ العبارة
+                  </button>
+                </div>
+              </div>
+              
+              {/* Direct Open Whatsapp Link */}
+              <a
+                href={`https://wa.me/${(() => {
+                  const phoneStr = courierObj?.supervisorPhone || "0599612490";
+                  let clean = phoneStr.replace(/[\s\-\+]/g, "");
+                  if (clean.startsWith("00966")) {
+                    clean = clean.substring(5);
+                  } else if (clean.startsWith("966")) {
+                    clean = clean.substring(3);
+                  } else if (clean.startsWith("05")) {
+                    clean = clean.substring(1);
+                  } else if (clean.startsWith("5") && clean.length === 9) {
+                    // already 5xxxxxxxx
+                  }
+                  return `966${clean}`;
+                })()}?text=${encodeURIComponent("جاهز لاستلام اليوزر")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-5 py-4 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-xl transition-all text-xs flex items-center justify-center gap-2 shrink-0 shadow-[0_4px_15px_rgba(16,185,129,0.25)] hover:scale-[1.01]"
+              >
+                <span>إرسال المستندات في الواتساب الآن 🚀</span>
+                {courierObj?.supervisorName && (
+                  <span className="text-[9px] bg-slate-950/20 px-1.5 py-0.5 rounded text-emerald-950 font-extrabold">({courierObj.supervisorName})</span>
+                )}
+              </a>
+            </div>
           </div>
 
           {/* Fake QR Check-In Graphic (represented brilliantly via high tech SVG to avoid dependencies) */}

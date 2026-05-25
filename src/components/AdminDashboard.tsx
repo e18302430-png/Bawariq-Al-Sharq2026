@@ -4,7 +4,7 @@ import {
   Lock, KeyRound, Loader2, Download, Search, MapPin, 
   Layers, LogOut, RefreshCw, BarChart3, Users, Clock, AlertCircle, Eye, EyeOff,
   UserCheck, ShieldCheck, Edit, CreditCard, Car, Sparkles, X, FileText, CheckCircle2,
-  Send, MessageSquare, LifeBuoy, Settings
+  Send, MessageSquare, LifeBuoy, Settings, UserPlus, Trash2
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -17,8 +17,16 @@ export default function AdminDashboard() {
   const [showPassword, setShowPassword] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   
-  // Tab controller: "applications" (new & interviews) vs "activated" (after office setup & activated) vs "support" vs "settings"
-  const [activeTab, setActiveTab] = useState<"applications" | "activated" | "support" | "settings">("applications");
+  // Tab controller: "applications" (new & interviews) vs "activated" (after office setup & activated) vs "support" vs "settings" vs "supervisors"
+  const [activeTab, setActiveTab] = useState<"applications" | "activated" | "support" | "settings" | "supervisors">("applications");
+
+  // Supervisors list admin states
+  const [supervisorsList, setSupervisorsList] = useState<any[]>([]);
+  const [loadingSupervisors, setLoadingSupervisors] = useState(false);
+  const [newSupervisorName, setNewSupervisorName] = useState("");
+  const [newSupervisorPhone, setNewSupervisorPhone] = useState("");
+  const [addingSupervisor, setAddingSupervisor] = useState(false);
+  const [deletingSupervisorId, setDeletingSupervisorId] = useState<string | null>(null);
   
   // Search & Filter constraints
   const [searchTerm, setSearchTerm] = useState("");
@@ -124,9 +132,92 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchSupervisorsList = async () => {
+    setLoadingSupervisors(true);
+    try {
+      const res = await fetch("/api/supervisors");
+      if (res.ok) {
+        const data = await res.json();
+        setSupervisorsList(data);
+      }
+    } catch (e) {
+      console.error("Failed to load supervisors in admin:", e);
+    } finally {
+      setLoadingSupervisors(false);
+    }
+  };
+
+  const handleAddSupervisor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSupervisorName.trim()) return;
+    setAddingSupervisor(true);
+    
+    const pw = password || sessionStorage.getItem("admin_pw") || "bawariq2026";
+    try {
+      const res = await fetch("/api/admin/supervisors/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: pw,
+          name: newSupervisorName.trim(),
+          phone: newSupervisorPhone.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSupervisorsList(data.supervisors);
+        setNewSupervisorName("");
+        setNewSupervisorPhone("");
+        alert("تمت إضافة المشرف بنجاح! 👤");
+      } else {
+        alert(data.error || "فشل إضافة المشرف");
+      }
+    } catch (err) {
+      alert("حدث خطأ أثناء رغبتك في إضافة المشرف.");
+    } finally {
+      setAddingSupervisor(false);
+    }
+  };
+
+  const handleDeleteSupervisor = async (supId: string) => {
+    if (supId === "direct") {
+      alert("لا يمكن حذف تسجيل مباشر!");
+      return;
+    }
+    if (!confirm("هل أنت متأكد من رغبتك بحذف هذا المشرف؟")) return;
+    setDeletingSupervisorId(supId);
+    
+    const pw = password || sessionStorage.getItem("admin_pw") || "bawariq2026";
+    try {
+      const res = await fetch("/api/admin/supervisors/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: pw,
+          id: supId
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSupervisorsList(data.supervisors);
+        alert("تم حذف المشرف بنجاح.");
+      } else {
+        alert(data.error || "فشل حذف المشرف");
+      }
+    } catch (err) {
+      alert("حدث خطأ في الاتصال بالخادم لحذف المشرف.");
+    } finally {
+      setDeletingSupervisorId(null);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "settings" && isAuth) {
       fetchAppSettings();
+    } else if (activeTab === "supervisors" && isAuth) {
+      fetchSupervisorsList();
     }
   }, [activeTab, isAuth]);
 
@@ -895,10 +986,25 @@ export default function AdminDashboard() {
           <Settings className="w-4 h-4 text-amber-500" />
           <span>إعدادات التطبيقات ونطاق العمل ⚙️</span>
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("supervisors");
+            fetchSupervisorsList();
+          }}
+          className={`flex-1 md:flex-initial px-5 py-3.5 md:px-8 border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs md:text-sm font-extrabold ${
+            activeTab === "supervisors"
+              ? "border-amber-500 text-amber-500 bg-amber-500/5 font-black"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          <Users className="w-4 h-4 text-cyan-400" />
+          <span>إدارة المشرفين بالموارد 🧑‍💼</span>
+        </button>
       </div>
 
       {/* Advanced search and filters section */}
-      {activeTab !== "support" && activeTab !== "settings" && (
+      {activeTab !== "support" && activeTab !== "settings" && activeTab !== "supervisors" && (
         <div className="bg-slate-900/30 border border-slate-800 rounded-xl p-4 gap-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between">
           {/* Search Input */}
           <div className="relative flex-1">
@@ -1121,6 +1227,147 @@ export default function AdminDashboard() {
                   })}
                 </div>
               )}
+            </div>
+          ) : activeTab === "supervisors" ? (
+            /* بوابة إدارة المشرفين بالموارد اللوجستية */
+            <div className="p-6 md:p-8 space-y-8 bg-slate-950/40 rounded-2xl text-right animate-fade-in border border-slate-900">
+              <div className="border-b border-slate-800 pb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <Users className="w-5 h-5 text-cyan-400" />
+                    <span>بوابة إدارة المشرفين وموارد التفعيل 🧑‍💼</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    يمكن لمدير النظام إضافة المشرفين المتخصصين للتواصل وتفعيل المناديب، بحيث يستطيع كل مندوب عند التسجيل اختيار المشرف الخاص به لتحويله مباشرة لواتس اب المشرف بعد الموعد.
+                  </p>
+                </div>
+                <div className="shrink-0 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg text-xs leading-none">
+                  <span className="text-slate-400">إجمالي المشرفين: </span>
+                  <span className="font-bold text-cyan-400 font-mono">{supervisorsList.length}</span>
+                </div>
+              </div>
+
+              {/* Grid 1: Add form & Current List split */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Right side: Add form card */}
+                <div className="lg:col-span-1 bg-slate-900/40 border border-slate-800 rounded-xl p-5 space-y-4">
+                  <h4 className="text-xs font-black text-white border-b border-slate-800 pb-2 flex items-center gap-1.5">
+                    <UserPlus className="w-4 h-4 text-emerald-400" />
+                    <span>إضافة مشرف ميداني جديد</span>
+                  </h4>
+                  
+                  <form onSubmit={handleAddSupervisor} className="space-y-3.5">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 block">اسم المشرف الكامل (ثنائي أو ثلاثي) *</label>
+                      <input
+                        type="text"
+                        required
+                        value={newSupervisorName}
+                        onChange={(e) => setNewSupervisorName(e.target.value)}
+                        placeholder="مثال: أ. صالح الحربي"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-bold"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 block">رقم جوال الواتساب (صيغة كـ 966) *</label>
+                      <input
+                        type="text"
+                        required
+                        value={newSupervisorPhone}
+                        onChange={(e) => setNewSupervisorPhone(e.target.value)}
+                        placeholder="مثال: 966501112223"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-550 font-mono"
+                      />
+                      <span className="text-[9px] text-slate-500 leading-tight block">يرجى كتابتها دولي كامل مفتاح المملكة دون (+ أو 00) مثل 9665xxxxxxxx.</span>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={addingSupervisor}
+                      className="w-full py-2 px-4 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 font-bold text-xs text-slate-950 rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-45 shadow-[0_4px_12px_rgba(6,182,212,0.15)]"
+                    >
+                      {addingSupervisor ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                          <span>جاري الإضافة للسيستم اللوجستي...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-3.5 h-3.5 text-slate-950" />
+                          <span>إضافة المشرف واعتماد الرقم 👥</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Left side: supervisors list Table */}
+                <div className="lg:col-span-2 bg-slate-900/20 border border-slate-900 rounded-xl overflow-hidden p-5 space-y-4">
+                  <h4 className="text-xs font-black text-white border-b border-slate-800 pb-2">سجل المشرفين المتواجدين بالأنظمة للشركة</h4>
+                  
+                  {loadingSupervisors ? (
+                    <div className="py-12 text-center text-slate-500 space-y-2">
+                      <Loader2 className="w-8 h-8 animate-spin text-cyan-400 mx-auto" />
+                      <p className="text-xs">جاري تحميل سجل المشرفين المعتمدين...</p>
+                    </div>
+                  ) : supervisorsList.length === 0 ? (
+                    <div className="py-12 text-center text-slate-550 text-xs text-center">لا يوجد أي مشرف مضاف حالياً.</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-800 text-slate-500 text-[10px] uppercase tracking-wider">
+                            <th className="pb-2.5 font-bold">معرّف الفريد</th>
+                            <th className="pb-2.5 font-bold">اسم المشرف بالكامل</th>
+                            <th className="pb-2.5 font-bold">رقم جوال الواتساب الدولي</th>
+                            <th className="pb-2.5 font-bold text-left">التحكم والإدارة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850">
+                          {supervisorsList.map((sup) => (
+                            <tr key={sup.id} className="hover:bg-slate-900/10 transition-colors">
+                              <td className="py-3 font-mono text-[10px] text-slate-500">#{sup.id.substring(0, 6)}</td>
+                              <td className="py-3 font-bold text-slate-200 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                <span>{sup.name}</span>
+                                {sup.id === "direct" && (
+                                  <span className="text-[8px] bg-amber-500/10 text-amber-500 border border-amber-500/10 px-1.5 py-0.5 rounded">الافتراضي</span>
+                                )}
+                              </td>
+                              <td className="py-3 font-mono text-slate-350">{sup.phone}</td>
+                              <td className="py-3 text-left">
+                                <div className="inline-flex items-center gap-2">
+                                  {sup.id !== "direct" ? (
+                                    <button
+                                      type="button"
+                                      disabled={deletingSupervisorId === sup.id}
+                                      onClick={() => handleDeleteSupervisor(sup.id)}
+                                      className="p-1 px-2.5 bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white rounded border border-rose-500/15 cursor-pointer text-[10px] font-bold transition-all flex items-center gap-1"
+                                      title="حذف هذا المشرف من النظام"
+                                    >
+                                      {deletingSupervisorId === sup.id ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-3 h-3" />
+                                      )}
+                                      <span>حذف</span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-600">— غير قابل للحذف —</span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+              </div>
             </div>
           ) : activeTab === "support" ? (
             /* مركز تذاكر الدعم والربط السحابي */

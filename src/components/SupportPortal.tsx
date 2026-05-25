@@ -3,6 +3,14 @@ import { MessageSquare, HelpCircle, Phone, ArrowRight, Send, RefreshCw, Layers, 
 
 const QUICK_ISSUES = [
   {
+    id: "online_interview",
+    title: "طلب مقابلة أونلاين عبر الإنترنت 🖥️",
+    desc: "جدولة المقابلة والتوثيق والقبول عن بعد دون الحاجة لزيارة المكتب الرئيسي",
+    category: "طلب مقابلة أونلاين للتكامل والقبول المباشر",
+    subject: "رغبة في جدولة مقابلة تفاعلية أونلاين مع الدعم الفني",
+    message: "أرغب في حجز موعد مقابلة أونلاين ريادية عن بعد للتأكد من هويتي ومستنداتي، ومن ثم بدء تنشيط يوزرات التوصيل الخاصة بي بالتنسيق مع المشرف المباشر."
+  },
+  {
     id: "jahez_hunger",
     title: "تفعيل كود جاهز / هنقرستيشن ⚡",
     desc: "طلب ربط الكود وتفعيل الحساب للبدء في توصيل الطلبات فوراً",
@@ -94,6 +102,21 @@ export default function SupportPortal() {
       setSearchPhone(savedPhone);
       // Auto search if has phone on load
       fetchTicketsByPhone(savedPhone);
+    }
+
+    const autoSelect = localStorage.getItem("bawariq_auto_select_issue");
+    if (autoSelect) {
+      const qSelected = QUICK_ISSUES.find(q => q.id === autoSelect);
+      if (qSelected) {
+        setSelectedQuickId(qSelected.id);
+        setTicketForm(prev => ({
+          ...prev,
+          category: qSelected.category,
+          subject: qSelected.subject,
+          message: qSelected.message
+        }));
+      }
+      localStorage.removeItem("bawariq_auto_select_issue");
     }
   }, []);
 

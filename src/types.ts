@@ -16,6 +16,10 @@ export interface Courier {
   appCourierCode?: string;
   activationDate?: string;
   adminNotes?: string;
+  supervisorId?: string; // Selected supervisor ID
+  supervisorName?: string; // Selected supervisor Name
+  agreementAccepted?: boolean; // Has selected/accepted the work agreement document
+  agreementAcceptedAt?: string; // Date of accepting the agreement
 }
 
 export interface DeliveryApp {
@@ -25,4 +29,7 @@ export interface DeliveryApp {
   color: string;
   textColor: string;
   description: string;
+  isAvailable?: boolean;
+  region?: string;
+  warningMessage?: string;
 }
