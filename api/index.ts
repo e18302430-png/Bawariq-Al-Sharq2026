@@ -33,9 +33,7 @@ async function db(table, method, body, query) {
   return text ? JSON.parse(text) : [];
 }
 
-function checkAdmin(password) {
-  return password === ADMIN_PASSWORD;
-}
+function checkAdmin(password) { return password === ADMIN_PASSWORD; }
 
 function mapCourier(c) {
   return {
@@ -49,6 +47,7 @@ function mapCourier(c) {
     appCourierCode: c.app_courier_code || "",
     activationDate: c.activation_date || "",
     adminNotes: c.admin_notes || "",
+    supervisorId: c.supervisor_id || "",
     createdAt: c.created_at || "",
   };
 }
@@ -62,9 +61,14 @@ function mapTicket(t) {
     subject: t.subject || "",
     status: t.status || "جديد",
     messages: t.messages || [],
+    supervisorId: t.supervisor_id || "",
     createdAt: t.created_at || "",
     updatedAt: t.updated_at || t.created_at || "",
   };
+}
+
+function mapSupervisor(s) {
+  return { id: s.id, name: s.name, isActive: s.is_active };
 }
 
 app.use((req, res, next) => {
@@ -76,15 +80,91 @@ app.use((req, res, next) => {
 });
 
 const distPath = path.join(__dirname, "..", "dist");
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-}
+if (fs.existsSync(distPath)) app.use(express.static(distPath));
 
 // ============================================================
 // Health
 // ============================================================
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", database: "supabase", timestamp: new Date().toISOString() });
+});
+
+// ============================================================
+// Supervisors - قائمة المشرفين العامة
+// ============================================================
+app.get("/api/supervisors", async (req, res) => {
+  try {
+    const data = await db("supervisors", "GET", undefined, "is_active=eq.true&order=created_at.asc");
+    res.json({ success: true, supervisors: data.map(mapSupervisor) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// تسجيل دخول المشرف
+app.post("/api/supervisor/login", async (req, res) => {
+  try {
+    const { supervisorId, password } = req.body;
+    if (!supervisorId || !password)
+      return res.status(400).json({ success: false, error: "أدخل المعرف وكلمة المرور" });
+    const data = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}&is_active=eq.true`);
+    if (!data.length) return res.status(404).json({ success: false, error: "المشرف غير موجود" });
+    const supervisor = data[0];
+    if (supervisor.password !== password)
+      return res.status(403).json({ success: false, error: "كلمة المرور غير صحيحة" });
+    res.json({ success: true, supervisor: mapSupervisor(supervisor) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// مناديب المشرف
+app.post("/api/supervisor/couriers", async (req, res) => {
+  try {
+    const { supervisorId, password } = req.body;
+    const data = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!data.length || data[0].password !== password)
+      return res.status(403).json({ success: false, error: "غير مصرح" });
+    const couriers = await db("couriers", "GET", undefined, `supervisor_id=eq.${supervisorId}&order=created_at.desc`);
+    res.json({ success: true, couriers: couriers.map(mapCourier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// تذاكر المشرف
+app.post("/api/supervisor/tickets", async (req, res) => {
+  try {
+    const { supervisorId, password } = req.body;
+    const data = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!data.length || data[0].password !== password)
+      return res.status(403).json({ success: false, error: "غير مصرح" });
+    const tickets = await db("support_tickets", "GET", undefined, `supervisor_id=eq.${supervisorId}&order=created_at.desc`);
+    res.json({ success: true, tickets: tickets.map(mapTicket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// رد المشرف على تذكرة
+app.post("/api/supervisor/tickets/:id/reply", async (req, res) => {
+  try {
+    const { supervisorId, password, text } = req.body;
+    const supData = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!supData.length || supData[0].password !== password)
+      return res.status(403).json({ success: false, error: "غير مصرح" });
+    const ticketData = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!ticketData.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
+    const ticket = ticketData[0];
+    const messages = ticket.messages || [];
+    messages.push({ sender: "admin", senderName: supData[0].name, text, createdAt: new Date().toISOString() });
+    const updated = await db("support_tickets", "PATCH", { messages, status: "تم الرد" }, `id=eq.${req.params.id}`);
+    res.json({ success: true, ticket: mapTicket(Array.isArray(updated) ? updated[0] : updated) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// تحديث حالة مندوب من المشرف
+app.post("/api/supervisor/update-status", async (req, res) => {
+  try {
+    const { supervisorId, password, courierId, status } = req.body;
+    const supData = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!supData.length || supData[0].password !== password)
+      return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", { status }, `id=eq.${courierId}&supervisor_id=eq.${supervisorId}`);
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ============================================================
@@ -128,6 +208,7 @@ app.post("/api/register", async (req, res) => {
       experience: b.experience || "", apps: b.apps || [],
       national_id: b.nationalId || "", status: "جديد",
       interview_date: "", interview_time: "", admin_notes: "",
+      supervisor_id: b.supervisorId || "",
     });
     const courier = Array.isArray(data) ? data[0] : data;
     if (N8N_WEBHOOK) {
@@ -150,8 +231,7 @@ app.post("/api/schedule", async (req, res) => {
       { interview_date: interviewDate, interview_time: interviewTime, status: "تمت المقابلة" },
       `id=eq.${courierId}`
     );
-    const courier = Array.isArray(data) ? data[0] : data;
-    res.json({ success: true, courier: mapCourier(courier) });
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -180,9 +260,14 @@ app.get("/api/courier-profile/:id", async (req, res) => {
 app.get("/courier/:id", async (req, res) => {
   try {
     const data = await db("couriers", "GET", undefined, `id=eq.${req.params.id}`);
-    if (!data.length) return res.status(404).send("<h1 style='font-family:Arial;text-align:center;margin-top:50px;color:#fff;background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center'>المندوب غير موجود</h1>");
+    if (!data.length) return res.status(404).send("<h1 style='font-family:Arial;text-align:center;margin-top:50px'>المندوب غير موجود</h1>");
     const c = data[0];
     const statusColor = c.status === "تم التفعيل" ? "#10b981" : c.status === "تمت المقابلة" ? "#06b6d4" : "#f59e0b";
+    let supervisorName = "";
+    if (c.supervisor_id) {
+      const sup = await db("supervisors", "GET", undefined, `id=eq.${c.supervisor_id}`).catch(() => []);
+      if (sup.length) supervisorName = sup[0].name;
+    }
     res.send(`<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -217,6 +302,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #
   <div class="city">📍 ${c.city}</div>
   <div class="status">${c.status || "جديد"}</div>
   <div class="info-box">
+    <div class="info-row"><span class="info-label">المشرف</span><span class="info-value">${supervisorName || "—"}</span></div>
     <div class="info-row"><span class="info-label">موعد المقابلة</span><span class="info-value">${c.interview_date ? c.interview_date.split(" (")[0] : "لم يحدد بعد"}</span></div>
     <div class="info-row"><span class="info-label">الوقت</span><span class="info-value">${c.interview_time || "—"}</span></div>
     <div class="info-row"><span class="info-label">تاريخ التسجيل</span><span class="info-value">${new Date(c.created_at).toLocaleDateString("ar-SA")}</span></div>
@@ -231,33 +317,26 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #
 });
 
 // ============================================================
-// Support Tickets - Frontend Endpoints
+// Support Tickets - Frontend
 // ============================================================
-
-// إنشاء تذكرة جديدة
 app.post("/api/support/tickets", async (req, res) => {
   try {
     const b = req.body;
     if (!b.name || !b.phone || !b.subject)
       return res.status(400).json({ success: false, error: "الاسم والجوال والموضوع مطلوبة" });
     const messages = [];
-    if (b.message) {
-      messages.push({ sender: "courier", text: b.message, imageUrl: b.imageUrl || null, createdAt: new Date().toISOString() });
-    }
+    if (b.message) messages.push({ sender: "courier", text: b.message, imageUrl: b.imageUrl || null, createdAt: new Date().toISOString() });
     const data = await db("support_tickets", "POST", {
-      courier_name: b.name,
-      courier_phone: b.phone,
-      category: b.category || "عام",
-      subject: b.subject,
-      status: "جديد",
-      messages,
+      courier_name: b.name, courier_phone: b.phone,
+      category: b.category || "عام", subject: b.subject,
+      status: "جديد", messages,
+      supervisor_id: b.supervisorId || "",
     });
     const ticket = Array.isArray(data) ? data[0] : data;
     res.status(201).json({ success: true, ticket: mapTicket(ticket) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// البحث عن تذاكر برقم الجوال
 app.post("/api/support/search", async (req, res) => {
   try {
     const { phone } = req.body;
@@ -267,7 +346,6 @@ app.post("/api/support/search", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// جلب تذكرة واحدة
 app.get("/api/support/tickets/:id", async (req, res) => {
   try {
     const data = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
@@ -276,7 +354,6 @@ app.get("/api/support/tickets/:id", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// إضافة رسالة لتذكرة
 app.post("/api/support/tickets/:id/messages", async (req, res) => {
   try {
     const { sender, text, imageUrl } = req.body;
@@ -311,15 +388,24 @@ app.post("/api/admin/update-status", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+app.post("/api/admin/assign-supervisor", async (req, res) => {
+  try {
+    const { password, courierId, supervisorId } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", { supervisor_id: supervisorId }, `id=eq.${courierId}`);
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 app.post("/api/admin/update-profile", async (req, res) => {
   try {
-    const { password, courierId, nationalId, iban, carPlate, vehicleModel, appCourierCode, activationDate, adminNotes } = req.body;
+    const { password, courierId, nationalId, iban, carPlate, vehicleModel, appCourierCode, activationDate, adminNotes, supervisorId } = req.body;
     if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
     const data = await db("couriers", "PATCH", {
       national_id: nationalId || "", iban: iban || "",
       car_plate: carPlate || "", vehicle_model: vehicleModel || "",
       app_courier_code: appCourierCode || "", activation_date: activationDate || "",
-      admin_notes: adminNotes || "",
+      admin_notes: adminNotes || "", supervisor_id: supervisorId || "",
     }, `id=eq.${courierId}`);
     res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
@@ -363,15 +449,36 @@ app.post("/api/admin/tickets/update-status", async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+app.post("/api/admin/supervisors", async (req, res) => {
+  try {
+    if (!checkAdmin(req.body.password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("supervisors", "GET", undefined, "order=created_at.asc");
+    res.json({ success: true, supervisors: data });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/supervisors/update-password", async (req, res) => {
+  try {
+    const { password, supervisorId, newPassword } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    await db("supervisors", "PATCH", { password: newPassword }, `id=eq.${supervisorId}`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 app.get("/api/admin/download-csv", async (req, res) => {
   try {
     const { auth } = req.query;
     if (!checkAdmin(auth)) return res.status(403).send("غير مصرح");
     const couriers = await db("couriers", "GET", undefined, "order=created_at.desc");
-    const headers = ["الاسم","الجوال","المدينة","الهوية","التطبيقات","الحالة","موعد المقابلة","وقت المقابلة","IBAN","المركبة","اللوحة","كود التطبيق","تاريخ التفعيل","الملاحظات","تاريخ التسجيل"];
+    const supervisors = await db("supervisors", "GET").catch(() => []);
+    const supMap = {};
+    supervisors.forEach(s => { supMap[s.id] = s.name; });
+    const headers = ["الاسم","الجوال","المدينة","الهوية","التطبيقات","الحالة","المشرف","موعد المقابلة","وقت المقابلة","IBAN","المركبة","اللوحة","كود التطبيق","تاريخ التفعيل","الملاحظات","تاريخ التسجيل"];
     const rows = couriers.map(c => [
       c.name, c.phone, c.city, c.national_id || "",
       (c.apps || []).join(" - "), c.status || "جديد",
+      supMap[c.supervisor_id] || "",
       c.interview_date || "", c.interview_time || "",
       c.iban || "", c.vehicle_model || "", c.car_plate || "",
       c.app_courier_code || "", c.activation_date || "",
