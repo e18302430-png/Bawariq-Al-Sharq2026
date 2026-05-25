@@ -133,19 +133,19 @@ export default function AdminDashboard() {
   };
 
   const fetchSupervisorsList = async () => {
-    setLoadingSupervisors(true);
-    try {
-      const res = await fetch("/api/supervisors");
-      if (res.ok) {
-        const data = await res.json();
-        setSupervisorsList(data || []);
-      }
-    } catch (e) {
-      console.error("Failed to load supervisors in admin:", e);
-    } finally {
-      setLoadingSupervisors(false);
+  setLoadingSupervisors(true);
+  try {
+    const res = await fetch("/api/supervisors");
+    if (res.ok) {
+      const data = await res.json();
+      setSupervisorsList(data.supervisors || []);
     }
-  };
+  } catch (e) {
+    console.error("Failed to load supervisors in admin:", e);
+  } finally {
+    setLoadingSupervisors(false);
+  }
+};
 
   const handleAddSupervisor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,46 +187,50 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteSupervisor = async (supId: string) => {
-    if (supId === "direct") {
-      alert("لا يمكن حذف تسجيل مباشر!");
-      return;
-    }
-    if (!confirm("هل أنت متأكد من رغبتك بحذف هذا المشرف؟")) return;
-    setDeletingSupervisorId(supId);
-    
-    const pw = password || sessionStorage.getItem("admin_pw") || "bawariq2026";
+  const handleAddSupervisor = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!newSupervisorName.trim() || !newSupervisorPhone.trim()) return;
+  setAddingSupervisor(true);
+  
+  const pw = password || sessionStorage.getItem("admin_pw") || "bawariq2026";
+  const generatedId = "sup_" + Date.now().toString().slice(-6);
+  const generatedPassword = "sup" + Math.random().toString(36).slice(-4);
+
+  try {
+    const res = await fetch("/api/admin/supervisors/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        password: pw,
+        id: generatedId,
+        name: newSupervisorName.trim(),
+        supervisorPassword: generatedPassword,
+        phone: newSupervisorPhone.trim()
+      })
+    });
+
+    const text = await res.text();
+    let data;
     try {
-      const res = await fetch("/api/admin/supervisors/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password: pw,
-          id: supId
-        })
-      });
-
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (jsonErr) {
-        data = { success: false, error: "استجابة غير معيارية من الخادم الرئيسي." };
-      }
-
-      if (res.ok && data.success) {
-        setSupervisorsList(data.supervisors || []);
-        alert("تم حذف المشرف بنجاح.");
-      } else {
-        alert(data.error || "فشل حذف المشرف");
-      }
-    } catch (err) {
-      alert("حدث خطأ في الاتصال بالخادم لحذف المشرف.");
-    } finally {
-      setDeletingSupervisorId(null);
+      data = JSON.parse(text);
+    } catch (jsonErr) {
+      data = { success: false, error: "استجابة غير معيارية من الخادم." };
     }
-  };
 
+    if (res.ok && data.success) {
+      await fetchSupervisorsList();
+      setNewSupervisorName("");
+      setNewSupervisorPhone("");
+      alert(`تمت إضافة المشرف بنجاح! 👤\nكلمة المرور: ${generatedPassword}\nاحفظها الآن!`);
+    } else {
+      alert(data.error || "فشل إضافة المشرف");
+    }
+  } catch (err) {
+    alert("حدث خطأ في الشبكة أثناء إضافة المشرف.");
+  } finally {
+    setAddingSupervisor(false);
+  }
+};
   useEffect(() => {
     if (activeTab === "settings" && isAuth) {
       fetchAppSettings();
