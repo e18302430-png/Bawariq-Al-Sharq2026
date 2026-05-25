@@ -6,9 +6,10 @@ interface AppointmentSchedulerProps {
   courierId: string;
   courierName: string;
   onSuccess: (date: string, time: string) => void;
+  onReset?: () => void;
 }
 
-export default function AppointmentScheduler({ courierId, courierName, onSuccess }: AppointmentSchedulerProps) {
+export default function AppointmentScheduler({ courierId, courierName, onSuccess, onReset }: AppointmentSchedulerProps) {
   const [availableDates, setAvailableDates] = useState<{ raw: Date; label: string; dateStr: string }[]>([]);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(INTERVIEW_SLOTS[0]);
@@ -94,8 +95,32 @@ export default function AppointmentScheduler({ courierId, courierName, onSuccess
     <div className="space-y-8 animate-fade-in" id="appointment-scheduler-container">
       {/* Alert Error If Any */}
       {error && (
-        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-xs md:text-sm animate-pulse">
-          {error}
+        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 p-5 rounded-2xl text-xs md:text-sm animate-pulse space-y-3 text-right">
+          <p className="font-bold flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-rose-500"></span>
+            <span>تنبيه النظام: {error}</span>
+          </p>
+          {error.includes("غير موجود") && (
+            <div className="bg-slate-950/80 p-4 rounded-xl border border-rose-500/20 space-y-3 mt-2">
+              <p className="text-slate-350 text-xs leading-relaxed text-right">
+                عذراً، يبدو أن جلسة التقديم منتهية أو لم نجد هذا المعرّف المؤقت في السجلات السحابية النشطة حاليًا. لا داعي للقلق، يمكنك البدء بالتسجيل مجدداً وكتابة بياناتك من الصفر بطريقة صحيحة لحجز موعد المقابلة بنجاح!
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onReset) {
+                    onReset();
+                  } else {
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="px-4 py-2.5 bg-gradient-to-r from-amber-400 to-amber-600 text-slate-950 font-extrabold rounded-xl hover:brightness-110 active:scale-95 transition-all text-xs cursor-pointer shadow-md inline-flex items-center gap-1.5"
+              >
+                <span>البدء في تعبئة طلب جديد من الأول ↺</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

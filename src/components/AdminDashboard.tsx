@@ -17,8 +17,9 @@ export default function AdminDashboard() {
   const [showPassword, setShowPassword] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   
-  // Tab controller: "applications" (new & interviews) vs "activated" (after office setup & activated) vs "support" vs "settings" vs "supervisors"
-  const [activeTab, setActiveTab] = useState<"applications" | "activated" | "support" | "settings" | "supervisors">("applications");
+  // Tab controller: "applications" (new & interviews) vs "activated" (after office setup & activated) vs "support" vs "settings" vs "supervisors" vs "documents"
+  const [activeTab, setActiveTab] = useState<"applications" | "activated" | "support" | "settings" | "supervisors" | "documents">("applications");
+  const [viewingDocumentCourier, setViewingDocumentCourier] = useState<Courier | null>(null);
 
   // Supervisors list admin states
   const [supervisorsList, setSupervisorsList] = useState<any[]>([]);
@@ -133,19 +134,19 @@ export default function AdminDashboard() {
   };
 
   const fetchSupervisorsList = async () => {
-  setLoadingSupervisors(true);
-  try {
-    const res = await fetch("/api/supervisors");
-    if (res.ok) {
-      const data = await res.json();
-      setSupervisorsList(data.supervisors || []);
+    setLoadingSupervisors(true);
+    try {
+      const res = await fetch("/api/supervisors");
+      if (res.ok) {
+        const data = await res.json();
+        setSupervisorsList(data || []);
+      }
+    } catch (e) {
+      console.error("Failed to load supervisors in admin:", e);
+    } finally {
+      setLoadingSupervisors(false);
     }
-  } catch (e) {
-    console.error("Failed to load supervisors in admin:", e);
-  } finally {
-    setLoadingSupervisors(false);
-  }
-};
+  };
 
   const handleAddSupervisor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,50 +188,46 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAddSupervisor = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!newSupervisorName.trim() || !newSupervisorPhone.trim()) return;
-  setAddingSupervisor(true);
-  
-  const pw = password || sessionStorage.getItem("admin_pw") || "bawariq2026";
-  const generatedId = "sup_" + Date.now().toString().slice(-6);
-  const generatedPassword = "sup" + Math.random().toString(36).slice(-4);
-
-  try {
-    const res = await fetch("/api/admin/supervisors/add", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        password: pw,
-        id: generatedId,
-        name: newSupervisorName.trim(),
-        supervisorPassword: generatedPassword,
-        phone: newSupervisorPhone.trim()
-      })
-    });
-
-    const text = await res.text();
-    let data;
+  const handleDeleteSupervisor = async (supId: string) => {
+    if (supId === "direct") {
+      alert("لا يمكن حذف تسجيل مباشر!");
+      return;
+    }
+    if (!confirm("هل أنت متأكد من رغبتك بحذف هذا المشرف؟")) return;
+    setDeletingSupervisorId(supId);
+    
+    const pw = password || sessionStorage.getItem("admin_pw") || "bawariq2026";
     try {
-      data = JSON.parse(text);
-    } catch (jsonErr) {
-      data = { success: false, error: "استجابة غير معيارية من الخادم." };
-    }
+      const res = await fetch("/api/admin/supervisors/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: pw,
+          id: supId
+        })
+      });
 
-    if (res.ok && data.success) {
-      await fetchSupervisorsList();
-      setNewSupervisorName("");
-      setNewSupervisorPhone("");
-      alert(`تمت إضافة المشرف بنجاح! 👤\nكلمة المرور: ${generatedPassword}\nاحفظها الآن!`);
-    } else {
-      alert(data.error || "فشل إضافة المشرف");
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonErr) {
+        data = { success: false, error: "استجابة غير معيارية من الخادم الرئيسي." };
+      }
+
+      if (res.ok && data.success) {
+        setSupervisorsList(data.supervisors || []);
+        alert("تم حذف المشرف بنجاح.");
+      } else {
+        alert(data.error || "فشل حذف المشرف");
+      }
+    } catch (err) {
+      alert("حدث خطأ في الاتصال بالخادم لحذف المشرف.");
+    } finally {
+      setDeletingSupervisorId(null);
     }
-  } catch (err) {
-    alert("حدث خطأ في الشبكة أثناء إضافة المشرف.");
-  } finally {
-    setAddingSupervisor(false);
-  }
-};
+  };
+
   useEffect(() => {
     if (activeTab === "settings" && isAuth) {
       fetchAppSettings();
@@ -961,6 +958,26 @@ export default function AdminDashboard() {
         <button
           type="button"
           onClick={() => {
+            setActiveTab("documents");
+            setSelectedStatusFilter("all");
+          }}
+          className={`flex-1 md:flex-initial px-5 py-3.5 md:px-8 border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs md:text-sm font-extrabold ${
+            activeTab === "documents"
+              ? "border-amber-500 text-amber-500 bg-amber-500/5 font-black"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          <FileText className="w-4 h-4 text-amber-500" />
+          <span className="flex items-center gap-1.5">
+            <span>وثائق ومستندات المناديب 📂</span>
+            <span className="px-1.5 py-0.5 text-[10px] bg-amber-500/10 text-amber-400 rounded-full font-mono font-bold">
+              {couriers.filter(c => c.agreementAccepted).length}
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
             setActiveTab("support");
             fetchTickets();
           }}
@@ -1085,6 +1102,11 @@ export default function AdminDashboard() {
                 <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-550/20 font-extrabold flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>حسابات مفعّلة بالكامل</span>
+                </span>
+              ) : activeTab === "documents" ? (
+                <span className="text-xs bg-amber-500/10 text-amber-500 px-3 py-1.5 rounded-lg border border-amber-550/20 font-extrabold flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>أرشيف الاتفاقيات المصادق عليها</span>
                 </span>
               ) : (
                 <select
@@ -1707,6 +1729,165 @@ export default function AdminDashboard() {
                 )}
               </div>
             </div>
+          ) : activeTab === "documents" ? (
+            /* Tab 6: وثائق المناديب والتعاقدات الإلكترونية المتقدمة البصرية */
+            <div className="p-6 md:p-8 space-y-8 bg-slate-950/40 rounded-2xl text-right animate-fade-in border border-slate-900" id="documents-hub">
+              {/* Header block with search details */}
+              <div className="border-b border-slate-800 pb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-amber-500" />
+                    <span>أرشيف وثائق وتواقيع المناديب المعتمدة (Bawariq Ledger) 🖋️</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    هنا يتم استلام وفهرسة تواقيع المناديب على اتفاقيات العمل الشروط المالية إلكترونياً. يمكنك استخراج طباعة العقد التشغيلي كامل لكل قائد مركبة ومطابقة التواقيع مع سجلات الأحوال المدنية.
+                  </p>
+                </div>
+                <div className="flex gap-2 text-xs">
+                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1">
+                    <span>موقّع ومكتمل:</span>
+                    <strong className="font-mono">{couriers.filter(c => c.agreementAccepted).length}</strong>
+                  </span>
+                  <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1">
+                    <span>بانتظار التوقيع:</span>
+                    <strong className="font-mono">{couriers.filter(c => !c.agreementAccepted).length}</strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Grid of Documents */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {(() => {
+                  // Filter couriers based on search term
+                  const query = searchTerm.toLowerCase().trim();
+                  const docCouriers = couriers.filter(c => {
+                    const matchesSearch = !query || 
+                      c.name.toLowerCase().includes(query) ||
+                      c.phone.includes(query) ||
+                      c.id.includes(query) ||
+                      (c.nationalId && c.nationalId.includes(query)) ||
+                      (c.agreementSignature && c.agreementSignature.toLowerCase().includes(query));
+                    return matchesSearch;
+                  });
+
+                  if (docCouriers.length === 0) {
+                    return (
+                      <div className="col-span-full py-12 text-center text-slate-500 bg-slate-950/60 rounded-xl border border-slate-900">
+                        لا توجد وثائق تطابق البحث الحالي
+                      </div>
+                    );
+                  }
+
+                  return docCouriers.map((c) => {
+                    return (
+                      <div 
+                        key={c.id} 
+                        className={`bg-slate-950 border rounded-2xl p-5 space-y-4 hover:scale-[1.01] transition-all flex flex-col justify-between relative overflow-hidden ${
+                          c.agreementAccepted 
+                            ? "border-emerald-500/30 bg-gradient-to-br from-slate-950 to-emerald-950/10" 
+                            : "border-slate-800 bg-gradient-to-br from-slate-950 to-slate-900/40"
+                        }`}
+                      >
+                        {/* Status watermark banner */}
+                        {c.agreementAccepted && (
+                          <div className="absolute -top-1 -left-1 bg-emerald-500 text-slate-950 text-[8px] font-black uppercase px-2 py-0.5 rounded-br-lg rotate-12 select-none opacity-80">
+                            SIGNED ✔
+                          </div>
+                        )}
+
+                        <div className="space-y-3">
+                          {/* Top bar Folder representation */}
+                          <div className="flex justify-between items-center border-b border-slate-900 pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className={`p-1.5 rounded ${c.agreementAccepted ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-850 text-slate-400"}`}>
+                                <FileText className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-500 block font-mono">ID: {c.id.substring(0,6).toUpperCase()}</span>
+                                <h4 className="text-xs font-bold text-white max-w-[120px] truncate">{c.name}</h4>
+                              </div>
+                            </div>
+
+                            {c.agreementAccepted ? (
+                              <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-black">
+                                معتمد ومقر 🔒
+                              </span>
+                            ) : (
+                              <span className="text-[9px] bg-amber-500/10 text-amber-550 px-2 py-0.5 rounded font-bold">
+                                معلّق التوقيع ⏳
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Info Rows */}
+                          <div className="space-y-1.5 text-xs text-slate-300">
+                            <div className="flex justify-between font-sans">
+                              <span className="text-slate-500 font-bold">رقم الهاتف:</span>
+                              <span className="font-mono text-white font-bold">{c.phone}</span>
+                            </div>
+                            <div className="flex justify-between font-sans">
+                              <span className="text-slate-500 font-bold">المدينة / المنطقة:</span>
+                              <span className="text-white font-bold">{c.city}</span>
+                            </div>
+                            <div className="flex justify-between font-sans">
+                              <span className="text-slate-500 font-bold">رقم الهوية:</span>
+                              <span className="font-mono text-white font-bold">{c.nationalId || "لم يدخل بعد"}</span>
+                            </div>
+                            <div className="flex justify-between font-sans">
+                              <span className="text-slate-500 font-bold">التطبيقات المختارة:</span>
+                              <span className="text-amber-450 font-extrabold max-w-[120px] truncate text-left select-none">
+                                {Array.isArray(c.apps) && c.apps.length > 0 ? c.apps.join(", ") : "لا توجد"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Visual Electronic Hand Signature representation */}
+                          {c.agreementAccepted ? (
+                            <div className="bg-slate-900 border border-dashed border-slate-850 p-2.5 rounded-xl text-center relative overflow-hidden select-none">
+                              <span className="text-[8px] text-slate-600 block text-right font-mono mb-1">SIGNATURE STAMP:</span>
+                              <p className="font-serif italic text-sm text-emerald-400 font-bold py-1 select-none">
+                                {c.agreementSignature || c.name}
+                              </p>
+                              <span className="text-[8px] text-slate-500 block text-left font-mono">
+                                تاريخ البصمة: {new Date(c.agreementAcceptedAt || "").toLocaleDateString('ar-SA')}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="bg-slate-900/50 border border-slate-900 p-3 rounded-xl text-center">
+                              <p className="text-[10px] text-slate-500 leading-relaxed">
+                                لم يتم توقيع العقد حتى الآن من قبل الكابتن.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action details */}
+                        <div className="pt-2">
+                          {c.agreementAccepted ? (
+                            <button
+                              type="button"
+                              onClick={() => setViewingDocumentCourier(c)}
+                              className="w-full py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-slate-950 text-xs font-black rounded-lg hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5 text-slate-950" />
+                              <span>مراجعة وطباعة وثيقة العمل كاملة</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full py-2 bg-slate-900 text-slate-600 text-xs font-bold rounded-lg cursor-not-allowed text-center"
+                            >
+                              بانتظار مصادقة الكابتن ⏳
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
           ) : filteredCouriers.length === 0 ? (
             <div className="p-12 text-center text-slate-500 space-y-2 bg-slate-950 border border-slate-850 rounded-xl">
               <p className="text-sm font-bold">عذراً، لم يتم العثور على أي كباتن يطابقون خيارات البحث والفرز المحددة في هذا القسم.</p>
@@ -2205,6 +2386,143 @@ export default function AdminDashboard() {
               className="max-w-full max-h-[85vh] object-contain block mx-auto"
               referrerPolicy="no-referrer"
             />
+          </div>
+        </div>
+      )}
+
+      {/* --- 📝 Premium Contract & Electronic Agreement Document Popup Modal (طباعة ومراجعة) --- */}
+      {viewingDocumentCourier && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 md:p-6" id="formal-document-modal">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-3xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:rounded-none animate-fade-in border-4 border-slate-100">
+            
+            {/* Absolute floating controls (hidden in prints) */}
+            <div className="absolute top-4 left-4 flex gap-2 print:hidden z-10">
+              {/* Print button */}
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2 bg-emerald-650 text-white font-extrabold text-xs rounded-xl hover:bg-emerald-500 transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>تصدير وطباعة 🖨️</span>
+              </button>
+
+              {/* Close Button */}
+              <button
+                onClick={() => setViewingDocumentCourier(null)}
+                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 rounded-xl transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Contract Page Layout (Pure elegant vector display, styled for print) */}
+            <div className="p-8 md:p-12 space-y-8 flex-1 overflow-y-auto text-right font-sans" id="printable-contract-page">
+              {/* Document Header (Bawariq Al-Sharq Branding) */}
+              <div className="border-b-4 border-amber-500 pb-5 flex flex-col md:flex-row items-center justify-between text-center md:text-right gap-4">
+                <div className="space-y-1">
+                  <h1 className="text-xl font-black tracking-tight text-slate-900">شركة بوارق الشرق للخدمات اللوجستية</h1>
+                  <p className="text-xs text-slate-500 font-bold">بوابة التوثيق والمصادقة التنظيمية والامتثال للمناديب</p>
+                  <p className="text-[10px] text-slate-400 font-mono">CR-NO: 1010882191 | LICENSED BY TRANSPORT GENERAL AUTHORITY</p>
+                </div>
+                {/* Circular Stamp / Seal representation */}
+                <div className="w-16 h-16 rounded-full border-4 border-dashed border-amber-500 flex flex-col items-center justify-center font-mono opacity-85 select-none shrink-0">
+                  <span className="text-[8px] font-black text-amber-600 tracking-tighter leading-none">BAWARIQ</span>
+                  <span className="text-[9px] font-bold text-slate-800 leading-none mt-1">APPROVED</span>
+                </div>
+              </div>
+
+              {/* Contract Identifier Metadata */}
+              <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl grid grid-cols-2 lg:grid-cols-3 gap-4 text-xs font-semibold">
+                <div>
+                  <span className="text-slate-400 text-[10px] block font-bold">رقم وثيقة العقد:</span>
+                  <span className="font-mono text-slate-900 text-sm font-bold">BQ-2026-REG-{viewingDocumentCourier.id.substring(0,8).toUpperCase()}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block font-bold">تاريخ المصادقة الإلكترونية:</span>
+                  <span className="text-slate-900 text-xs font-bold">{new Date(viewingDocumentCourier.agreementAcceptedAt || "").toLocaleString('ar-SA')}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block font-bold">حالة الوثيقة:</span>
+                  <span className="text-emerald-600 font-extrabold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>معتمدة وصالحة قانونياً</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Contract Parties definition */}
+              <div className="space-y-3.5 border-b border-slate-150 pb-5">
+                <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
+                  <span>بند أطراف العقد:</span>
+                </h2>
+                <div className="space-y-2 text-xs leading-relaxed text-slate-850">
+                  <p>
+                    <strong>الطرف الأول (صاحب العمل المعتمد):</strong> مؤسسة شركة بوارق الشرق للخدمات اللوجستية والتوصيل السريع بالمملكة العربية السعودية.
+                  </p>
+                  <p>
+                    <strong>الطرف الثاني (الكابتن المندوب):</strong> السيد/السيدة <span className="font-extrabold text-slate-900 border-b border-dotted border-slate-900 px-2">{viewingDocumentCourier.name}</span>، 
+                    رقم الهاتف: <span className="font-mono font-bold text-slate-900">{viewingDocumentCourier.phone}</span>، 
+                    مدينة العمل: <span className="font-bold text-slate-900">{viewingDocumentCourier.city}</span>، 
+                    ورقم الهوية الوطنية/الإقامة: <span className="font-mono font-bold text-slate-900 border-b border-dotted border-slate-900 px-2">{viewingDocumentCourier.nationalId || "لم تكتمل"}</span>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Legal Clauses Statement */}
+              <div className="space-y-4">
+                <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
+                  <span>البنود والشروط ومحضر الاتفاقية والعمولات المعتمدة:</span>
+                </h2>
+                <div className="space-y-3 text-[11px] text-slate-700 leading-relaxed text-justify list-decimal font-sans">
+                  <p>
+                    <strong>البند الأول (الشفافية وقبول العمولات التفعيلية):</strong> يوافق الطرف الثاني بكامل إرادته وصلاحياته القانونية واللوجستية على العمل بتطبيقات التوصيل المختارة (وهي بالتفصيل: {viewingDocumentCourier.apps?.join(", ") || "لا توجد"}). كما يعلن الطرف الثاني اطلاعه الكامل وموافقته على تسعيرات الشرائح ونسب العمولات والخصومات المئوية وإيجار اليوزرات الموضحة بالكتيب اللوجستي لشركة بوارق الشرق.
+                  </p>
+                  <p>
+                    <strong>البند الثاني (حفظ العهد وصيانة البيانات):</strong> يتعهد الكابتن المندوب بالمحافظة المطلقة على سرية أكواد التوصيل المسلمة له، ويتحمل كامل المسؤولية عن أي أضرار مادية أو معنوية ناتجة عن تسليم هذه الأكواد لجهات خارجية أو العمل بها خارج النطاق اللوجستي المعتمد.
+                  </p>
+                  <p>
+                    <strong>البند الثالث (الالتزام بالقوانين العامة):</strong> يلتزم الطرف الثاني بالتقيد الصارم بالتعاليم والقيم الأخلاقية للمملكة، ومراعاة آداب التعامل مع العملاء والموردين. ويقر بتحمله المسؤولية التامة عن كافة الالتزامات الجنائية والمرورية التي تقع أثناء فترات تفعيله للعمل.
+                  </p>
+                  <p>
+                    <strong>البند الرابع (حجية البصمة الإلكترونية والتوقيع الرقمي):</strong> بموجب أحكام نظام المعاملات الإلكترونية واللوائح ذات العلاقة المعمول بها بالمملكة، يقر الطرفان بتمتع التوقيع الإلكتروني والبصمة الرقمية المسجلة أدناه بالحجية القانونية والالتزام التعاقدي الصارم، وتعتبر بديلاً كافياً ووافياً للتوقيع الخطي الورقي.
+                  </p>
+                </div>
+              </div>
+
+              {/* Detailed Signature Blocks */}
+              <div className="grid grid-cols-2 gap-8 pt-6 border-t-2 border-slate-200">
+                {/* Party A Signature */}
+                <div className="space-y-3 text-center border border-slate-100 p-4 rounded-xl bg-slate-50 relative overflow-hidden">
+                  <h3 className="text-xs font-black text-slate-900">توقيع الطرف الأول (شركة بوارق الشرق)</h3>
+                  <div className="py-2.5 flex items-center justify-center">
+                    {/* Circular Stamps & Seals */}
+                    <div className="w-14 h-14 rounded-full border-2 border-double border-red-500 flex items-center justify-center text-center opacity-70 select-none transform rotate-6">
+                      <span className="text-[7px] font-black text-red-550 font-mono tracking-tight leading-none text-center">BAWARIQ CHARTERED SEAL</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500">إدارة العلاقات اللوجستية والامتثال</p>
+                </div>
+
+                {/* Party B Driver Signature */}
+                <div className="space-y-3 text-center border border-slate-100 p-4 rounded-xl bg-slate-50">
+                  <h3 className="text-xs font-black text-slate-900">توقيع الطرف الثاني (الكابتن المندوب)</h3>
+                  <div className="py-2 select-none">
+                    <span className="font-serif italic text-lg text-emerald-700 font-extrabold border-b-2 border-slate-300 pb-1 px-4 block">
+                      {viewingDocumentCourier.agreementSignature || viewingDocumentCourier.name}
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-slate-500">بصمة إلكترونية مؤمنة وثابتة بالنظام</p>
+                  <p className="text-[8px] text-slate-400 font-mono">HASH CODE: {viewingDocumentCourier.id.substring(0,10).toUpperCase()}-ACCEPT</p>
+                </div>
+              </div>
+
+              {/* Footer print note */}
+              <div className="text-center text-[9px] text-slate-400 pt-5 border-t border-slate-100">
+                تمت طباعة وصياغة هذه الوثيقة من أرشيف الكباتن لشركة بوارق الشرق للخدمات اللوجستية. جميع الحقوق محفوظة لعام ٢٠٢٦ ©
+              </div>
+            </div>
           </div>
         </div>
       )}

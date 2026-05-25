@@ -30,7 +30,7 @@ export default function PricingAndAgreement({ courierId, courierName, onSuccess 
       const res = await fetch("/api/agreement/accept", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courierId })
+        body: JSON.stringify({ courierId, signature: signature.trim() })
       });
 
       const data = await res.json();

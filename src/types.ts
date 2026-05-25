@@ -21,6 +21,7 @@ export interface Courier {
   supervisorPhone?: string; // Selected supervisor Phone number
   agreementAccepted?: boolean; // Has selected/accepted the work agreement document
   agreementAcceptedAt?: string; // Date of accepting the agreement
+  agreementSignature?: string; // Signature name
 }
 
 export interface DeliveryApp {
