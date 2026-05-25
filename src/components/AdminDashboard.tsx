@@ -138,7 +138,7 @@ export default function AdminDashboard() {
       const res = await fetch("/api/supervisors");
       if (res.ok) {
         const data = await res.json();
-        setSupervisorsList(data);
+        setSupervisorsList(data || []);
       }
     } catch (e) {
       console.error("Failed to load supervisors in admin:", e);
@@ -164,9 +164,16 @@ export default function AdminDashboard() {
         })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonErr) {
+        data = { success: false, error: "استجابة غير معيارية من الخادم الرئيسي." };
+      }
+
       if (res.ok && data.success) {
-        setSupervisorsList(data.supervisors);
+        setSupervisorsList(data.supervisors || []);
         setNewSupervisorName("");
         setNewSupervisorPhone("");
         alert("تمت إضافة المشرف بنجاح! 👤");
@@ -174,7 +181,7 @@ export default function AdminDashboard() {
         alert(data.error || "فشل إضافة المشرف");
       }
     } catch (err) {
-      alert("حدث خطأ أثناء رغبتك في إضافة المشرف.");
+      alert("حدث خطأ في الشبكة السحابية أثناء رغبتك في إضافة المشرف.");
     } finally {
       setAddingSupervisor(false);
     }
@@ -199,9 +206,16 @@ export default function AdminDashboard() {
         })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonErr) {
+        data = { success: false, error: "استجابة غير معيارية من الخادم الرئيسي." };
+      }
+
       if (res.ok && data.success) {
-        setSupervisorsList(data.supervisors);
+        setSupervisorsList(data.supervisors || []);
         alert("تم حذف المشرف بنجاح.");
       } else {
         alert(data.error || "فشل حذف المشرف");
@@ -1327,8 +1341,8 @@ export default function AdminDashboard() {
                         </thead>
                         <tbody className="divide-y divide-slate-850">
                           {supervisorsList.map((sup) => (
-                            <tr key={sup.id} className="hover:bg-slate-900/10 transition-colors">
-                              <td className="py-3 font-mono text-[10px] text-slate-500">#{sup.id.substring(0, 6)}</td>
+                            <tr key={sup?.id || Math.random().toString()} className="hover:bg-slate-900/10 transition-colors">
+                              <td className="py-3 font-mono text-[10px] text-slate-500">#{sup?.id ? (typeof sup.id === "string" ? sup.id.substring(0, 6) : String(sup.id).substring(0, 6)) : ""}</td>
                               <td className="py-3 font-bold text-slate-200 flex items-center gap-1.5">
                                 <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                                 <span>{sup.name}</span>

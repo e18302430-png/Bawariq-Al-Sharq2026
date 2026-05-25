@@ -18,6 +18,7 @@ export interface Courier {
   adminNotes?: string;
   supervisorId?: string; // Selected supervisor ID
   supervisorName?: string; // Selected supervisor Name
+  supervisorPhone?: string; // Selected supervisor Phone number
   agreementAccepted?: boolean; // Has selected/accepted the work agreement document
   agreementAcceptedAt?: string; // Date of accepting the agreement
 }

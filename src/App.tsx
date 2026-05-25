@@ -28,12 +28,18 @@ export default function App() {
     city: string;
     apps: string[];
     nationalId?: string;
+    supervisorId?: string;
+    supervisorName?: string;
+    supervisorPhone?: string;
   }>({
     name: "",
     phone: "",
     city: "",
     apps: [],
     nationalId: "",
+    supervisorId: "",
+    supervisorName: "",
+    supervisorPhone: "",
   });
   
   const [scheduledDate, setScheduledDate] = useState("");

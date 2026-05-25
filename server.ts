@@ -8,17 +8,17 @@ const PORT = 3000;
 // Enable JSON parsing
 app.use(express.json());
 
-// Detect writeable data directory dynamically (use /tmp in production/serverless)
-let DATA_DIR = "/tmp";
-const isProductionLike = process.env.NODE_ENV === "production" || process.env.VERCEL === "1" || !fs.existsSync(path.join(process.cwd(), "data"));
-if (!isProductionLike) {
-  DATA_DIR = path.join(process.cwd(), "data");
-}
+// Detect writeable data directory dynamically (prefer workspace local data folder for persistence, fallback to /tmp if write is protected)
+let DATA_DIR = path.join(process.cwd(), "data");
 
 try {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  // Safe write test to ensure directory is writable
+  const testFile = path.join(DATA_DIR, ".write_test");
+  fs.writeFileSync(testFile, "test_write", "utf8");
+  fs.unlinkSync(testFile);
 } catch (e) {
   DATA_DIR = "/tmp";
 }
@@ -927,8 +927,22 @@ app.get("/api/supervisors", (req, res) => {
       ];
       fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(defaultSupervisors, null, 2), "utf8");
     }
-    const supContent = fs.readFileSync(SUPERVISORS_FILE, "utf8");
-    const supervisors = JSON.parse(supContent);
+    
+    let supervisors = [];
+    try {
+      const supContent = fs.readFileSync(SUPERVISORS_FILE, "utf8");
+      supervisors = supContent ? JSON.parse(supContent) : [];
+    } catch (parseErr) {
+      console.warn("⚠️ Error parsing supervisors file. Resetting to default.", parseErr);
+      const defaultSupervisors = [
+        { id: "direct", name: "تسجيل مباشر (بدون مشرف)", phone: "0599612490", active: true },
+        { id: "sup_1", name: "الأستاذ أحمد (مشرف المنطقة الشرقية)", phone: "0599612490", active: true },
+        { id: "sup_2", name: "الأستاذ خالد (مشرف الوسطى والرياض)", phone: "0599612490", active: true },
+        { id: "sup_3", name: "الأستاذ محمد (مشرف الغربية وجدة)", phone: "0599612490", active: true }
+      ];
+      fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(defaultSupervisors, null, 2), "utf8");
+      supervisors = defaultSupervisors;
+    }
     res.json(supervisors);
   } catch (error: any) {
     res.status(500).json({ error: "فشل جلب قائمة المشرفين: " + error.message });
@@ -946,14 +960,20 @@ app.post("/api/admin/supervisors/add", (req, res) => {
       return res.status(400).json({ error: "الرجاء إدخال اسم المشرف" });
     }
 
-    const supervisors = fs.existsSync(SUPERVISORS_FILE) 
-      ? JSON.parse(fs.readFileSync(SUPERVISORS_FILE, "utf8")) 
-      : [];
+    let supervisors = [];
+    if (fs.existsSync(SUPERVISORS_FILE)) {
+      try {
+        const fileContent = fs.readFileSync(SUPERVISORS_FILE, "utf8");
+        supervisors = fileContent ? JSON.parse(fileContent) : [];
+      } catch (jsonErr) {
+        supervisors = [];
+      }
+    }
 
     const newSupervisor = {
       id: "sup_" + Date.now().toString(),
-      name,
-      phone: phone || "",
+      name: String(name).trim(),
+      phone: phone ? String(phone).trim() : "0599612490",
       active: true
     };
 
@@ -979,9 +999,15 @@ app.post("/api/admin/supervisors/delete", (req, res) => {
       return res.status(400).json({ error: "لا يمكن حذف مشرف المتابعة المباشرة الأساسي" });
     }
 
-    let supervisors = fs.existsSync(SUPERVISORS_FILE) 
-      ? JSON.parse(fs.readFileSync(SUPERVISORS_FILE, "utf8")) 
-      : [];
+    let supervisors = [];
+    if (fs.existsSync(SUPERVISORS_FILE)) {
+      try {
+        const fileContent = fs.readFileSync(SUPERVISORS_FILE, "utf8");
+        supervisors = fileContent ? JSON.parse(fileContent) : [];
+      } catch (jsonErr) {
+        supervisors = [];
+      }
+    }
 
     supervisors = supervisors.filter((s: any) => s.id !== id);
     fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(supervisors, null, 2), "utf8");
