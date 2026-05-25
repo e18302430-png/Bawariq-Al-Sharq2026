@@ -9,9 +9,6 @@ import SupportPortal from "./components/SupportPortal";
 import SupervisorDashboard from "./components/SupervisorDashboard";
 import { Sparkles, CheckCircle2, FileText, ArrowLeft, Trophy, LifeBuoy, MapPin, Search, Loader2, AlertCircle, X, KeyRound, Lock } from "lucide-react";
 
-// ============================================================
-// Supervisor Login Component
-// ============================================================
 function SupervisorLogin({ onLogin }: { onLogin: (supervisor: any, password: string) => void }) {
   const [supervisorId, setSupervisorId] = useState("");
   const [password, setPassword] = useState("");
@@ -56,7 +53,6 @@ function SupervisorLogin({ onLogin }: { onLogin: (supervisor: any, password: str
           <h3 className="text-xl font-extrabold text-white">لوحة المشرفين</h3>
           <p className="text-xs text-slate-400">أدخل بيانات دخولك للوصول للوحتك الخاصة</p>
         </div>
-
         <form onSubmit={handleLogin} className="space-y-4">
           {error && (
             <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs p-3 rounded-xl flex items-center gap-2">
@@ -64,39 +60,22 @@ function SupervisorLogin({ onLogin }: { onLogin: (supervisor: any, password: str
               <span>{error}</span>
             </div>
           )}
-
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-300 block">اختر اسمك</label>
-            <select
-              required
-              value={supervisorId}
-              onChange={e => setSupervisorId(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500 cursor-pointer"
-            >
+            <select required value={supervisorId} onChange={e => setSupervisorId(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500 cursor-pointer">
               <option value="">— اختر المشرف —</option>
-              {supervisors.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
+              {supervisors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-300 block">كلمة المرور</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={e => setPassword(e.target.value)}
+            <input type="password" required value={password} onChange={e => setPassword(e.target.value)}
               placeholder="أدخل كلمة المرور"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500 tracking-widest font-mono text-center"
-            />
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500 tracking-widest font-mono text-center" />
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-extrabold py-3 rounded-xl hover:brightness-110 cursor-pointer disabled:opacity-50"
-          >
+          <button type="submit" disabled={loading}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-extrabold py-3 rounded-xl hover:brightness-110 cursor-pointer disabled:opacity-50">
             {loading ? <><Loader2 className="w-4 h-4 animate-spin" /><span>جاري التحقق...</span></> : <><Lock className="w-4 h-4" /><span>دخول</span></>}
           </button>
         </form>
@@ -105,9 +84,6 @@ function SupervisorLogin({ onLogin }: { onLogin: (supervisor: any, password: str
   );
 }
 
-// ============================================================
-// Main App
-// ============================================================
 export default function App() {
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isSupportMode, setIsSupportMode] = useState(false);
@@ -131,20 +107,16 @@ export default function App() {
 
   const handleLookup = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLookupError("");
-    setLookupSuccessMsg("");
-    setLookupLoading(true);
+    setLookupError(""); setLookupSuccessMsg(""); setLookupLoading(true);
     try {
       const response = await fetch("/api/couriers/lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: lookupQuery }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || "عذراً، لم نجد أي طلب تقديم متطابق.");
       const { courier } = data;
-      setCourierId(courier.id);
-      setCourierName(courier.name);
+      setCourierId(courier.id); setCourierName(courier.name);
       const info = { name: courier.name, phone: courier.phone, city: courier.city, apps: courier.apps || [], nationalId: courier.nationalId || "" };
       setRegistrationInfo(info);
       localStorage.setItem("bawariq_courier_id", courier.id);
@@ -152,42 +124,37 @@ export default function App() {
       localStorage.setItem("bawariq_courier_phone", courier.phone);
       localStorage.setItem("bawariq_courier_reg_info", JSON.stringify(info));
       if (courier.interviewDate && courier.interviewTime) {
-        setScheduledDate(courier.interviewDate);
-        setScheduledTime(courier.interviewTime);
-        setStep(3);
+        setScheduledDate(courier.interviewDate); setScheduledTime(courier.interviewTime); setStep(3);
         localStorage.setItem("bawariq_courier_step", "3");
         localStorage.setItem("bawariq_courier_scheduled_date", courier.interviewDate);
         localStorage.setItem("bawariq_courier_scheduled_time", courier.interviewTime);
       } else {
-        setStep(2);
-        localStorage.setItem("bawariq_courier_step", "2");
+        setStep(2); localStorage.setItem("bawariq_courier_step", "2");
       }
-      setLookupSuccessMsg(`أهلاً بك مجدداً يا كابتن ${courier.name}! تم تمكين ومزامنة جلستك بنجاح.`);
+      setLookupSuccessMsg(`أهلاً بك مجدداً يا كابتن ${courier.name}!`);
       setTimeout(() => { setShowLookup(false); setLookupQuery(""); setLookupSuccessMsg(""); }, 3000);
     } catch (err: any) {
       setLookupError(err.message || "حدث خطأ أثناء فحص البيانات.");
-    } finally {
-      setLookupLoading(false);
-    }
+    } finally { setLookupLoading(false); }
   };
 
   useEffect(() => {
-    const savedStep = localStorage.getItem("bawariq_courier_step");
-    const savedId = localStorage.getItem("bawariq_courier_id");
-    const savedRegInfo = localStorage.getItem("bawariq_courier_reg_info");
-    const savedDate = localStorage.getItem("bawariq_courier_scheduled_date");
-    const savedTime = localStorage.getItem("bawariq_courier_scheduled_time");
-    const savedName = localStorage.getItem("bawariq_courier_name");
-    if (savedStep) setStep(Number(savedStep));
-    if (savedId) setCourierId(savedId);
-    if (savedRegInfo) { try { setRegistrationInfo(JSON.parse(savedRegInfo)); } catch (e) {} }
-    if (savedDate) setScheduledDate(savedDate);
-    if (savedTime) setScheduledTime(savedTime);
-    if (savedName) setCourierName(savedName);
+    const s = localStorage.getItem("bawariq_courier_step");
+    const id = localStorage.getItem("bawariq_courier_id");
+    const info = localStorage.getItem("bawariq_courier_reg_info");
+    const date = localStorage.getItem("bawariq_courier_scheduled_date");
+    const time = localStorage.getItem("bawariq_courier_scheduled_time");
+    const name = localStorage.getItem("bawariq_courier_name");
+    if (s) setStep(Number(s));
+    if (id) setCourierId(id);
+    if (info) { try { setRegistrationInfo(JSON.parse(info)); } catch (e) {} }
+    if (date) setScheduledDate(date);
+    if (time) setScheduledTime(time);
+    if (name) setCourierName(name);
   }, []);
 
   useEffect(() => {
-    const handleHashChange = () => {
+    const checkHash = () => {
       const hash = window.location.hash;
       if (hash === "#admin" || hash === "#bawariq") {
         setIsAdminMode(true); setIsSupportMode(false); setIsSupervisorMode(false);
@@ -199,9 +166,11 @@ export default function App() {
         setIsAdminMode(false); setIsSupportMode(false); setIsSupervisorMode(false);
       }
     };
-    handleHashChange();
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
+    // تشغيل فوري + بعد 200ms عشان يضمن التحميل
+    checkHash();
+    const t = setTimeout(checkHash, 200);
+    window.addEventListener("hashchange", checkHash);
+    return () => { clearTimeout(t); window.removeEventListener("hashchange", checkHash); };
   }, []);
 
   const handleAdminToggle = () => {
@@ -210,14 +179,8 @@ export default function App() {
   };
 
   const handleFooterClick = () => {
-    const nextCount = footerClicks + 1;
-    setFooterClicks(nextCount);
-    if (nextCount >= 5) {
-      window.location.hash = "#admin";
-      setIsAdminMode(true);
-      setFooterClicks(0);
-      alert("تم تفعيل ممر العبور الآمن الخاص بإدارة بوارق الشرق 🔒");
-    }
+    const n = footerClicks + 1; setFooterClicks(n);
+    if (n >= 5) { window.location.hash = "#admin"; setIsAdminMode(true); setFooterClicks(0); alert("تم تفعيل ممر العبور الآمن 🔒"); }
   };
 
   const handleRegisterSuccess = (id: string, info: typeof registrationInfo) => {
@@ -240,19 +203,14 @@ export default function App() {
     setCourierId(""); setCourierName("");
     setRegistrationInfo({ name: "", phone: "", city: "", apps: [] });
     setScheduledDate(""); setScheduledTime(""); setStep(0);
-    localStorage.removeItem("bawariq_courier_step");
-    localStorage.removeItem("bawariq_courier_id");
-    localStorage.removeItem("bawariq_courier_reg_info");
-    localStorage.removeItem("bawariq_courier_scheduled_date");
-    localStorage.removeItem("bawariq_courier_scheduled_time");
-    localStorage.removeItem("bawariq_courier_name");
-    localStorage.removeItem("bawariq_courier_phone");
+    ["bawariq_courier_step","bawariq_courier_id","bawariq_courier_reg_info",
+     "bawariq_courier_scheduled_date","bawariq_courier_scheduled_time",
+     "bawariq_courier_name","bawariq_courier_phone"].forEach(k => localStorage.removeItem(k));
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 font-sans tracking-tight text-slate-100 selection:bg-amber-500 selection:text-slate-950 overflow-x-hidden">
       <Navbar onAdminClick={handleAdminToggle} isAdminMode={isAdminMode} />
-
       <main className="flex-grow max-w-6xl mx-auto w-full px-4 py-8 md:py-12 space-y-12">
         {isAdminMode ? (
           <AdminDashboard />
@@ -263,20 +221,10 @@ export default function App() {
             <SupervisorDashboard
               supervisor={supervisorData}
               password={supervisorPassword}
-              onLogout={() => {
-                setSupervisorData(null);
-                setSupervisorPassword("");
-                setIsSupervisorMode(false);
-                window.location.hash = "";
-              }}
+              onLogout={() => { setSupervisorData(null); setSupervisorPassword(""); setIsSupervisorMode(false); window.location.hash = ""; }}
             />
           ) : (
-            <SupervisorLogin
-              onLogin={(sup, pw) => {
-                setSupervisorData(sup);
-                setSupervisorPassword(pw);
-              }}
-            />
+            <SupervisorLogin onLogin={(sup, pw) => { setSupervisorData(sup); setSupervisorPassword(pw); }} />
           )
         ) : (
           <div className="space-y-10">
@@ -323,23 +271,20 @@ export default function App() {
                       <span>ابدأ التسجيل الفوري وتأكيد حسابك الآن</span>
                       <ArrowLeft className="w-5 h-5 stroke-[2.5] bg-slate-950 text-amber-400 rounded-full p-1" />
                     </button>
-                    <a href="#support"
-                      className="w-full sm:w-auto px-6 py-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-350 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                    <a href="#support" className="w-full sm:w-auto px-6 py-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-350 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2">
                       <LifeBuoy className="w-4 h-4 text-amber-500 animate-pulse" />
                       <span>الدعم الفني المباشر 🎧</span>
                     </a>
                   </div>
-
                   <div className="pt-2">
                     <button onClick={() => { setShowLookup(!showLookup); setLookupError(""); setLookupSuccessMsg(""); }}
-                      className="text-xs text-amber-500 font-extrabold flex items-center gap-1.5 mx-auto hover:text-amber-450 cursor-pointer border border-amber-500/20 px-5 py-2.5 rounded-full bg-slate-900/50 hover:bg-slate-900 transition-all font-sans shadow-md">
+                      className="text-xs text-amber-500 font-extrabold flex items-center gap-1.5 mx-auto cursor-pointer border border-amber-500/20 px-5 py-2.5 rounded-full bg-slate-900/50 hover:bg-slate-900 transition-all shadow-md">
                       <Search className="w-3.5 h-3.5" />
                       <span>هل قمت بالتسجيل مسبقاً؟ استعلم عن حالة طلبك 🔍</span>
                     </button>
                   </div>
-
                   {showLookup && (
-                    <div className="max-w-md mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl relative animate-fade-in space-y-4 text-right">
+                    <div className="max-w-md mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl space-y-4 text-right">
                       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                         <button type="button" onClick={() => setShowLookup(false)} className="p-1 hover:bg-slate-800 rounded-lg text-slate-500 cursor-pointer">
                           <X className="w-4 h-4" />
@@ -350,18 +295,8 @@ export default function App() {
                         </h4>
                       </div>
                       <form onSubmit={handleLookup} className="space-y-4">
-                        {lookupError && (
-                          <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[11px] p-3 rounded-xl flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                            <span>{lookupError}</span>
-                          </div>
-                        )}
-                        {lookupSuccessMsg && (
-                          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] p-3 rounded-xl flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                            <span>{lookupSuccessMsg}</span>
-                          </div>
-                        )}
+                        {lookupError && <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[11px] p-3 rounded-xl flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" /><span>{lookupError}</span></div>}
+                        {lookupSuccessMsg && <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] p-3 rounded-xl flex items-center gap-2"><CheckCircle2 className="w-4 h-4 flex-shrink-0" /><span>{lookupSuccessMsg}</span></div>}
                         <div className="space-y-1.5">
                           <label className="text-[11px] font-bold text-slate-300 block">رقم الجوال أو رقم الهوية</label>
                           <input type="text" required value={lookupQuery} onChange={e => setLookupQuery(e.target.value)}
@@ -375,7 +310,6 @@ export default function App() {
                       </form>
                     </div>
                   )}
-
                   <div className="pt-2 flex flex-wrap justify-center items-center gap-x-6 gap-y-2.5 text-slate-500 text-xs text-center">
                     <span className="flex items-center gap-1"><Trophy className="w-4 h-4 text-amber-500/65" /><span>تسويات فورية</span></span>
                     <span>•</span>
@@ -386,15 +320,11 @@ export default function App() {
                     <span className="flex items-center gap-1">
                       <MapPin className="w-4 h-4 text-amber-500" />
                       <a href="https://maps.google.com/?q=Dammam+Abu+Bakr+Al+Siddiq+Road+Business+Tower" target="_blank" rel="noopener noreferrer"
-                        className="text-slate-400 hover:text-amber-400 font-bold underline decoration-slate-600 hover:decoration-amber-500 transition-all">
-                        مقرنا الرئيسي بالدمام 📍
-                      </a>
+                        className="text-slate-400 hover:text-amber-400 font-bold underline transition-all">مقرنا الرئيسي بالدمام 📍</a>
                     </span>
                   </div>
                 </div>
-                <div id="partners-grid" className="scroll-mt-24">
-                  <Features />
-                </div>
+                <div id="partners-grid" className="scroll-mt-24"><Features /></div>
               </div>
             )}
 
@@ -402,8 +332,7 @@ export default function App() {
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                   <button onClick={() => setStep(0)} className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer">
-                    <span>الرجوع للرئيسية</span>
-                    <span className="rotate-180 inline-block font-bold">←</span>
+                    <span>الرجوع للرئيسية</span><span className="rotate-180 inline-block font-bold">←</span>
                   </button>
                   <span className="text-xs text-slate-500 font-bold">يرجى ملء الحقول المطلوبة لتوثيق الملف</span>
                 </div>
@@ -433,7 +362,7 @@ export default function App() {
             منصة بوارق الشرق للتسجيل مسجلة تحت مظلة الهيئة العامة للنقل بالتنسيق مع أشهر التطبيقات.
           </p>
           <p className="text-[10px] text-slate-700">
-            <a href="#supervisor" className="hover:text-amber-500 transition-colors">بوابة المشرفين</a>
+            <a href="#supervisor" className="hover:text-amber-500 transition-colors cursor-pointer">بوابة المشرفين</a>
           </p>
         </div>
       </footer>
