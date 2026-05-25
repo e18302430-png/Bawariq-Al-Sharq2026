@@ -1,5 +1,7 @@
 {
   "version": 2,
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
   "builds": [
     {
       "src": "api/index.js",
@@ -13,7 +15,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/api/index.js"
+      "destination": "/index.html"
     }
   ]
 }
