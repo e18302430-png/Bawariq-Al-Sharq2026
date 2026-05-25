@@ -7,8 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://gsvodabvuodhqgozisbq.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdzdm9kYWJ2dW9kaHFnb3ppc2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MTY3MjYsImV4cCI6MjA5NTE5MjcyNn0.v_kZqy-bWDtbl8pAGW3qcpNh5JGpiAshbpiY9u3uxWA";
@@ -39,19 +39,13 @@ function checkAdmin(password) {
 
 function mapCourier(c) {
   return {
-    id: c.id,
-    name: c.name,
-    phone: c.phone,
-    city: c.city,
-    experience: c.experience,
-    apps: c.apps || [],
+    id: c.id, name: c.name, phone: c.phone, city: c.city,
+    experience: c.experience, apps: c.apps || [],
     status: c.status || "جديد",
     interviewDate: c.interview_date || "",
     interviewTime: c.interview_time || "",
-    nationalId: c.national_id || "",
-    iban: c.iban || "",
-    carPlate: c.car_plate || "",
-    vehicleModel: c.vehicle_model || "",
+    nationalId: c.national_id || "", iban: c.iban || "",
+    carPlate: c.car_plate || "", vehicleModel: c.vehicle_model || "",
     appCourierCode: c.app_courier_code || "",
     activationDate: c.activation_date || "",
     adminNotes: c.admin_notes || "",
@@ -69,6 +63,7 @@ function mapTicket(t) {
     status: t.status || "جديد",
     messages: t.messages || [],
     createdAt: t.created_at || "",
+    updatedAt: t.updated_at || t.created_at || "",
   };
 }
 
@@ -135,21 +130,13 @@ app.post("/api/register", async (req, res) => {
       interview_date: "", interview_time: "", admin_notes: "",
     });
     const courier = Array.isArray(data) ? data[0] : data;
-
-    // إشعار n8n عند تسجيل مندوب جديد
     if (N8N_WEBHOOK) {
       fetch(N8N_WEBHOOK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event: "new_courier",
-          courier: mapCourier(courier),
-          profileUrl: `${APP_URL}/courier/${courier.id}`,
-          timestamp: new Date().toISOString(),
-        }),
+        body: JSON.stringify({ event: "new_courier", courier: mapCourier(courier), profileUrl: `${APP_URL}/courier/${courier.id}`, timestamp: new Date().toISOString() }),
       }).catch(() => {});
     }
-
     res.status(201).json({ success: true, courierId: courier.id, courier: mapCourier(courier) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
@@ -193,7 +180,7 @@ app.get("/api/courier-profile/:id", async (req, res) => {
 app.get("/courier/:id", async (req, res) => {
   try {
     const data = await db("couriers", "GET", undefined, `id=eq.${req.params.id}`);
-    if (!data.length) return res.status(404).send("<h1 style='font-family:Arial;text-align:center;margin-top:50px'>المندوب غير موجود</h1>");
+    if (!data.length) return res.status(404).send("<h1 style='font-family:Arial;text-align:center;margin-top:50px;color:#fff;background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center'>المندوب غير موجود</h1>");
     const c = data[0];
     const statusColor = c.status === "تم التفعيل" ? "#10b981" : c.status === "تمت المقابلة" ? "#06b6d4" : "#f59e0b";
     res.send(`<!DOCTYPE html>
@@ -244,6 +231,67 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #
 });
 
 // ============================================================
+// Support Tickets - Frontend Endpoints
+// ============================================================
+
+// إنشاء تذكرة جديدة
+app.post("/api/support/tickets", async (req, res) => {
+  try {
+    const b = req.body;
+    if (!b.name || !b.phone || !b.subject)
+      return res.status(400).json({ success: false, error: "الاسم والجوال والموضوع مطلوبة" });
+    const messages = [];
+    if (b.message) {
+      messages.push({ sender: "courier", text: b.message, imageUrl: b.imageUrl || null, createdAt: new Date().toISOString() });
+    }
+    const data = await db("support_tickets", "POST", {
+      courier_name: b.name,
+      courier_phone: b.phone,
+      category: b.category || "عام",
+      subject: b.subject,
+      status: "جديد",
+      messages,
+    });
+    const ticket = Array.isArray(data) ? data[0] : data;
+    res.status(201).json({ success: true, ticket: mapTicket(ticket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// البحث عن تذاكر برقم الجوال
+app.post("/api/support/search", async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ success: false, error: "أدخل رقم الجوال" });
+    const data = await db("support_tickets", "GET", undefined, `courier_phone=eq.${phone}&order=created_at.desc`);
+    res.json({ success: true, tickets: data.map(mapTicket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// جلب تذكرة واحدة
+app.get("/api/support/tickets/:id", async (req, res) => {
+  try {
+    const data = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!data.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
+    res.json({ success: true, ticket: mapTicket(data[0]) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// إضافة رسالة لتذكرة
+app.post("/api/support/tickets/:id/messages", async (req, res) => {
+  try {
+    const { sender, text, imageUrl } = req.body;
+    const ticketData = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!ticketData.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
+    const ticket = ticketData[0];
+    const messages = ticket.messages || [];
+    messages.push({ sender: sender || "courier", text: text || "", imageUrl: imageUrl || null, createdAt: new Date().toISOString() });
+    const newStatus = sender === "admin" ? "تم الرد" : "قيد المتابعة";
+    const data = await db("support_tickets", "PATCH", { messages, status: newStatus }, `id=eq.${req.params.id}`);
+    res.json({ success: true, ticket: mapTicket(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// ============================================================
 // Admin Endpoints
 // ============================================================
 app.post("/api/admin/couriers", async (req, res) => {
@@ -259,8 +307,7 @@ app.post("/api/admin/update-status", async (req, res) => {
     const { password, courierId, status } = req.body;
     if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
     const data = await db("couriers", "PATCH", { status }, `id=eq.${courierId}`);
-    const courier = Array.isArray(data) ? data[0] : data;
-    res.json({ success: true, courier: mapCourier(courier) });
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -274,8 +321,7 @@ app.post("/api/admin/update-profile", async (req, res) => {
       app_courier_code: appCourierCode || "", activation_date: activationDate || "",
       admin_notes: adminNotes || "",
     }, `id=eq.${courierId}`);
-    const courier = Array.isArray(data) ? data[0] : data;
-    res.json({ success: true, courier: mapCourier(courier) });
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -336,41 +382,6 @@ app.get("/api/admin/download-csv", async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="bawariq-couriers-${new Date().toISOString().split("T")[0]}.csv"`);
     res.send(csv);
   } catch (e) { res.status(500).send("خطأ في تصدير البيانات"); }
-});
-
-// ============================================================
-// Support Tickets
-// ============================================================
-app.get("/api/tickets", async (req, res) => {
-  try {
-    res.json(await db("support_tickets", "GET", undefined, "order=created_at.desc"));
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/tickets", async (req, res) => {
-  try {
-    const b = req.body;
-    const data = await db("support_tickets", "POST", {
-      courier_name: b.courier_name, courier_phone: b.courier_phone,
-      category: b.category || "عام", subject: b.subject,
-      status: "جديد", messages: b.messages || [],
-    });
-    res.status(201).json(Array.isArray(data) ? data[0] : data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/support/tickets/:id/messages", async (req, res) => {
-  try {
-    const { sender, text } = req.body;
-    const ticketData = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
-    if (!ticketData.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
-    const ticket = ticketData[0];
-    const messages = ticket.messages || [];
-    messages.push({ sender: sender || "user", text, createdAt: new Date().toISOString() });
-    const newStatus = sender === "admin" ? "تم الرد" : "قيد المتابعة";
-    const data = await db("support_tickets", "PATCH", { messages, status: newStatus }, `id=eq.${req.params.id}`);
-    res.json({ success: true, ticket: mapTicket(Array.isArray(data) ? data[0] : data) });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 // ============================================================
