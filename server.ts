@@ -1,1445 +1,579 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Enable JSON parsing
-app.use(express.json());
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://gsvodabvuodhqgozisbq.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdzdm9kYWJ2dW9kaHFnb3ppc2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MTY3MjYsImV4cCI6MjA5NTE5MjcyNn0.v_kZqy-bWDtbl8pAGW3qcpNh5JGpiAshbpiY9u3uxWA";
+const ADMIN_PASSWORD = "bawariq2026";
+const APP_URL = process.env.APP_URL || "https://bawariq-al-sharq2026.vercel.app";
+const N8N_WEBHOOK = process.env.N8N_WEBHOOK || "";
 
-// Detect writeable data directory dynamically (prefer workspace local data folder for persistence, fallback to /tmp if write is protected)
-let DATA_DIR = path.join(process.cwd(), "data");
-
-try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  // Safe write test to ensure directory is writable
-  const testFile = path.join(DATA_DIR, ".write_test");
-  fs.writeFileSync(testFile, "test_write", "utf8");
-  fs.unlinkSync(testFile);
-} catch (e) {
-  DATA_DIR = "/tmp";
+async function db(table, method, body, query) {
+  const url = `${SUPABASE_URL}/rest/v1/${table}${query ? "?" + query : ""}`;
+  const res = await fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      "Prefer": "return=representation",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
 }
 
-const DATA_FILE = path.join(DATA_DIR, "couriers.json");
-const TICKETS_FILE = path.join(DATA_DIR, "support_tickets.json");
-const SETTINGS_FILE = path.join(DATA_DIR, "app_settings.json");
-const SUPERVISORS_FILE = path.join(DATA_DIR, "supervisors.json");
-const DEBUG_LOG_FILE = path.join(DATA_DIR, "debug.log");
+function checkAdmin(p) { return p === ADMIN_PASSWORD; }
 
-// Seed/Copy from read-only application data folder to writable folder if needed
-try {
-  const seedCouriersPath = path.join(process.cwd(), "data", "couriers.json");
-  const seedTicketsPath = path.join(process.cwd(), "data", "support_tickets.json");
-  const seedSettingsPath = path.join(process.cwd(), "data", "app_settings.json");
-  const seedSupervisorsPath = path.join(process.cwd(), "data", "supervisors.json");
-
-  if (!fs.existsSync(DATA_FILE)) {
-    if (fs.existsSync(seedCouriersPath)) {
-      fs.copyFileSync(seedCouriersPath, DATA_FILE);
-    } else {
-      fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
-    }
-  }
-
-  if (!fs.existsSync(TICKETS_FILE)) {
-    if (fs.existsSync(seedTicketsPath)) {
-      fs.copyFileSync(seedTicketsPath, TICKETS_FILE);
-    } else {
-      fs.writeFileSync(TICKETS_FILE, JSON.stringify([], null, 2), "utf8");
-    }
-  }
-
-  if (!fs.existsSync(SETTINGS_FILE)) {
-    if (fs.existsSync(seedSettingsPath)) {
-      fs.copyFileSync(seedSettingsPath, SETTINGS_FILE);
-    } else {
-      const defaultSettings = {
-        hungerstation: { id: "hungerstation", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-        toyou: { id: "toyou", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-        keeta: { id: "keeta", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-        thechefs: { id: "thechefs", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-        mrsool: { id: "mrsool", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-        jahez: { id: "jahez", isAvailable: true, region: "مستوى المملكة", warningMessage: "" }
-      };
-      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 2), "utf8");
-    }
-  }
-
-  if (!fs.existsSync(SUPERVISORS_FILE)) {
-    if (fs.existsSync(seedSupervisorsPath)) {
-      fs.copyFileSync(seedSupervisorsPath, SUPERVISORS_FILE);
-    } else {
-      const defaultSupervisors = [
-        { id: "direct", name: "تسجيل مباشر (بدون مشرف)", phone: "0599612490", active: true },
-        { id: "sup_1", name: "الأستاذ أحمد (مشرف المنطقة الشرقية)", phone: "0599612490", active: true },
-        { id: "sup_2", name: "الأستاذ خالد (مشرف الوسطى والرياض)", phone: "0599612490", active: true },
-        { id: "sup_3", name: "الأستاذ محمد (مشرف الغربية وجدة)", phone: "0599612490", active: true }
-      ];
-      fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(defaultSupervisors, null, 2), "utf8");
-    }
-  } else {
-    try {
-      let content = fs.readFileSync(SUPERVISORS_FILE, "utf8");
-      if (content.includes("0501112223") || content.includes("0502223334") || content.includes("0503334445") || content.includes("966501112223")) {
-        content = content.replace(/0501112223/g, "0599612490")
-                         .replace(/0502223334/g, "0599612490")
-                         .replace(/0503334445/g, "0599612490")
-                         .replace(/966501112223/g, "0599612490");
-        fs.writeFileSync(SUPERVISORS_FILE, content, "utf8");
-      }
-    } catch (e) {}
-  }
-} catch (e) {
-  console.warn("⚠️ DATA_DIR seeding/copying had a warning:", e);
+function mapCourier(c) {
+  return {
+    id: c.id, name: c.name, phone: c.phone, city: c.city,
+    experience: c.experience, apps: c.apps || [],
+    status: c.status || "جديد",
+    interviewDate: c.interview_date || "",
+    interviewTime: c.interview_time || "",
+    nationalId: c.national_id || "", iban: c.iban || "",
+    carPlate: c.car_plate || "", vehicleModel: c.vehicle_model || "",
+    appCourierCode: c.app_courier_code || "",
+    activationDate: c.activation_date || "",
+    adminNotes: c.admin_notes || "",
+    supervisorId: c.supervisor_id || "",
+    createdAt: c.created_at || "",
+  };
 }
 
-// Request and Crash Debug Logger
+function mapTicket(t) {
+  return {
+    id: t.id, courierName: t.courier_name || "",
+    courierPhone: t.courier_phone || "",
+    category: t.category || "عام", subject: t.subject || "",
+    status: t.status || "جديد", messages: t.messages || [],
+    supervisorId: t.supervisor_id || "",
+    createdAt: t.created_at || "", updatedAt: t.updated_at || t.created_at || "",
+  };
+}
+
+function mapSupervisor(s) {
+  return { id: s.id, name: s.name, phone: s.phone || "", isActive: s.is_active, password: s.password || "" };
+}
+
 app.use((req, res, next) => {
-  const bodyCopy = { ...req.body };
-  if (bodyCopy.password) bodyCopy.password = "******";
-  const logMsg = `[${new Date().toISOString()}] ${req.method} ${req.url} - BODY: ${JSON.stringify(bodyCopy)}\n`;
-  try {
-    fs.appendFileSync(DEBUG_LOG_FILE, logMsg, "utf8");
-  } catch (err) {}
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
 
-// Define interface for Courier
-interface Courier {
-  id: string;
-  name: string;
-  phone: string;
-  city: string;
-  experience: string;
-  apps: string[];
-  createdAt: string;
-  status: "جديد" | "تمت المقابلة" | "تم التفعيل";
-  interviewDate?: string;
-  interviewTime?: string;
-  nationalId?: string;
-  iban?: string;
-  carPlate?: string;
-  vehicleModel?: string;
-  appCourierCode?: string;
-  activationDate?: string;
-  adminNotes?: string;
-  supervisorId?: string;
-  supervisorName?: string;
-  supervisorPhone?: string;
-  agreementAccepted?: boolean;
-  agreementAcceptedAt?: string;
-}
+const distPath = path.join(__dirname, "..", "dist");
+if (fs.existsSync(distPath)) app.use(express.static(distPath));
 
-interface SupportMessage {
-  id: string;
-  sender: "courier" | "admin";
-  text: string;
-  imageUrl?: string;
-  createdAt: string;
-}
+// Health
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", database: "supabase", timestamp: new Date().toISOString() });
+});
 
-interface SupportTicket {
-  id: string; // T-XXXX
-  courierName: string;
-  courierPhone: string;
-  category: string;
-  subject: string;
-  status: "جديد" | "قيد المتابعة" | "تم الرد" | "مغلق";
-  createdAt: string;
-  updatedAt: string;
-  messages: SupportMessage[];
-}
-
-// Map Firestore Typed Fields recursively for REST API serialization
-function toFirestoreValue(val: any): any {
-  if (val === null || val === undefined) {
-    return { nullValue: null };
-  }
-  if (typeof val === "boolean") {
-    return { booleanValue: val };
-  }
-  if (typeof val === "number") {
-    if (Number.isInteger(val)) {
-      return { integerValue: String(val) };
-    }
-    return { doubleValue: val };
-  }
-  if (typeof val === "string") {
-    return { stringValue: val };
-  }
-  if (Array.isArray(val)) {
-    return {
-      arrayValue: {
-        values: val.map(toFirestoreValue)
-      }
-    };
-  }
-  if (typeof val === "object") {
-    const fields: any = {};
-    for (const k of Object.keys(val)) {
-      fields[k] = toFirestoreValue(val[k]);
-    }
-    return {
-      mapValue: {
-        fields
-      }
-    };
-  }
-  return { stringValue: String(val) };
-}
-
-// Parse Firestore Typed Fields recursively for REST API deserialization
-function fromFirestoreValue(fVal: any): any {
-  if (!fVal) return null;
-  if ("nullValue" in fVal) return null;
-  if ("booleanValue" in fVal) return fVal.booleanValue;
-  if ("integerValue" in fVal) return parseInt(fVal.integerValue, 10);
-  if ("doubleValue" in fVal) return fVal.doubleValue;
-  if ("stringValue" in fVal) return fVal.stringValue;
-  if ("arrayValue" in fVal) {
-    const values = fVal.arrayValue.values || [];
-    return values.map(fromFirestoreValue);
-  }
-  if ("mapValue" in fVal) {
-    const fields = fVal.mapValue.fields || {};
-    const res: any = {};
-    for (const k of Object.keys(fields)) {
-      res[k] = fromFirestoreValue(fields[k]);
-    }
-    return res;
-  }
-  return null;
-}
-
-// Config Firestore Rest Credentials
-let firestoreRest: {
-  projectId: string;
-  databaseId: string;
-  apiKey: string;
-} | null = null;
-
-let firestoreClient: any = null;
-
-try {
-  const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(firebaseConfigPath)) {
-    const config = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
-    firestoreRest = {
-      projectId: config.projectId,
-      databaseId: config.firestoreDatabaseId || "(default)",
-      apiKey: config.apiKey
-    };
-    console.log(`⚡ Firestore REST Client configured. Project: ${config.projectId}, DB: ${config.firestoreDatabaseId}`);
-  } else {
-    console.warn("⚠️ No firebase-applet-config.json found. Running on fallback local file database.");
-  }
-} catch (e: any) {
-  console.warn("⚠️ Firestore Client / REST initialization deferred, running on fallback local file database:", e.message);
-}
-
-// Read Support Tickets Helper (From local JSON file)
-function readTicketsFile(): SupportTicket[] {
+// ============================================================
+// Supervisors
+// ============================================================
+app.get("/api/supervisors", async (req, res) => {
   try {
-    if (!fs.existsSync(TICKETS_FILE)) return [];
-    const content = fs.readFileSync(TICKETS_FILE, "utf8");
-    return JSON.parse(content);
-  } catch (error) {
-    console.error("Error reading tickets file:", error);
-    return [];
-  }
-}
+    const data = await db("supervisors", "GET", undefined, "is_active=eq.true&order=created_at.asc");
+    res.json({ success: true, supervisors: data.map(mapSupervisor) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-// Write Support Tickets Helper to file
-function writeTicketsFile(tickets: SupportTicket[]) {
+app.post("/api/supervisor/login", async (req, res) => {
   try {
-    fs.writeFileSync(TICKETS_FILE, JSON.stringify(tickets, null, 2), "utf8");
-  } catch (error) {
-    console.error("Error writing tickets file:", error);
-  }
-}
+    const { supervisorId, password } = req.body;
+    const data = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}&is_active=eq.true`);
+    if (!data.length) return res.status(404).json({ success: false, error: "المشرف غير موجود" });
+    if (data[0].password !== password) return res.status(403).json({ success: false, error: "كلمة المرور غير صحيحة" });
+    res.json({ success: true, supervisor: mapSupervisor(data[0]) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-// Read Couriers Helper (Tries Firestore, falls back to JSON)
-function readCouriersFile(): Courier[] {
+app.post("/api/supervisor/couriers", async (req, res) => {
   try {
-    if (!fs.existsSync(DATA_FILE)) return [];
-    const content = fs.readFileSync(DATA_FILE, "utf8");
-    return JSON.parse(content);
-  } catch (error) {
-    console.error("Error reading couriers file:", error);
-    return [];
-  }
-}
+    const { supervisorId, password } = req.body;
+    const sup = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!sup.length || sup[0].password !== password) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const couriers = await db("couriers", "GET", undefined, `supervisor_id=eq.${supervisorId}&order=created_at.desc`);
+    res.json({ success: true, couriers: couriers.map(mapCourier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-// Write Couriers Helper for physical backup file
-function writeCouriersFile(couriers: Courier[]) {
+app.post("/api/supervisor/tickets", async (req, res) => {
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(couriers, null, 2), "utf8");
-  } catch (error) {
-    console.error("Error writing backup file:", error);
-  }
-}
+    const { supervisorId, password } = req.body;
+    const sup = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!sup.length || sup[0].password !== password) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const tickets = await db("support_tickets", "GET", undefined, `supervisor_id=eq.${supervisorId}&order=created_at.desc`);
+    res.json({ success: true, tickets: tickets.map(mapTicket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-// Read App Settings Helper
-function readSettingsFile(): Record<string, any> {
-  const defaultSettings = {
-    hungerstation: { id: "hungerstation", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-    toyou: { id: "toyou", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-    keeta: { id: "keeta", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-    thechefs: { id: "thechefs", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-    mrsool: { id: "mrsool", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-    jahez: { id: "jahez", isAvailable: true, region: "مستوى المملكة", warningMessage: "" }
-  };
+app.post("/api/supervisor/tickets/:id/reply", async (req, res) => {
   try {
-    if (!fs.existsSync(SETTINGS_FILE)) return defaultSettings;
-    const content = fs.readFileSync(SETTINGS_FILE, "utf8");
-    return JSON.parse(content);
-  } catch (error) {
-    console.error("Error reading settings file:", error);
-    return defaultSettings;
-  }
-}
+    const { supervisorId, password, text } = req.body;
+    const sup = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!sup.length || sup[0].password !== password) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const ticketData = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!ticketData.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
+    const messages = ticketData[0].messages || [];
+    messages.push({ sender: "admin", senderName: sup[0].name, text, createdAt: new Date().toISOString() });
+    const updated = await db("support_tickets", "PATCH", { messages, status: "تم الرد" }, `id=eq.${req.params.id}`);
+    res.json({ success: true, ticket: mapTicket(Array.isArray(updated) ? updated[0] : updated) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-// Write App Settings Helper
-function writeSettingsFile(settings: Record<string, any>) {
+app.post("/api/supervisor/update-status", async (req, res) => {
   try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf8");
-  } catch (error) {
-    console.error("Error writing settings file:", error);
-  }
-}
+    const { supervisorId, password, courierId, status } = req.body;
+    const sup = await db("supervisors", "GET", undefined, `id=eq.${supervisorId}`);
+    if (!sup.length || sup[0].password !== password) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", { status }, `id=eq.${courierId}`);
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-// Custom fast HTTP fetcher with abort timeout to avoid hanging serverless threads
-async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 15000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+// ============================================================
+// Delivery Apps
+// ============================================================
+const APPS_BASE = [
+  { id: "hungerstation", name: "هنقرستيشن (HungerStation)", description: "المنصة الأكبر والأكثر طلباً بالمملكة مع بونص يومي مجزٍ", logo: "🍔", color: "from-amber-500 to-amber-600", textColor: "text-amber-500" },
+  { id: "toyou", name: "تويو (ToYou)", description: "نمو متسارع وطلبات مستمرة وتغطية كافة أنحاء المدن الرئيسية", logo: "🚗", color: "from-red-500 to-red-600", textColor: "text-red-500" },
+  { id: "keeta", name: "كيتا (Keeta)", description: "تطبيق التوصيل الصاعد بقوة مع حوافز ممتازة وعمولات ثابتة", logo: "⚡", color: "from-orange-500 to-orange-600", textColor: "text-orange-500" },
+  { id: "thechefs", name: "ذا شفز (The Chefs)", description: "نخبة المطاعم والحلويات الفاخرة مع متوسط قيمة توصيل مرتفعة", logo: "👨‍🍳", color: "from-purple-500 to-purple-600", textColor: "text-purple-500" },
+  { id: "mrsool", name: "مرسول (Mrsool)", description: "تحكم كامل في اختيار الطلبات والتواصل المباشر مع العميل", logo: "📨", color: "from-emerald-500 to-emerald-600", textColor: "text-emerald-500" },
+  { id: "jahez", name: "جاهز (Jahez)", description: "قاعدة عملاء عريضة وشبكة مطاعم حصرية تضمن تدفق مستمر للطلبات", logo: "🛵", color: "from-pink-500 to-pink-600", textColor: "text-pink-500" },
+];
+
+app.get("/api/delivery-apps", async (req, res) => {
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
+    const settings = await db("app_settings", "GET");
+    const apps = APPS_BASE.map((app) => {
+      const s = settings.find((x) => x.id === app.id);
+      return { ...app, isAvailable: s ? s.is_available : true, region: s ? s.region : "مستوى المملكة", warningMessage: s ? s.warning_message : "" };
     });
-    return response;
-  } finally {
-    clearTimeout(id);
-  }
-}
-
-// Highly reliable Firestore REST client request execution wrapper with auto-fallbacks
-async function callFirestoreREST(
-  collectionPath: string,
-  method: "POST" | "PATCH" | "DELETE" | "GET",
-  body: any,
-  subPathSuffix: string = "" // e.g. ":runQuery" or "/someDocumentId"
-): Promise<any> {
-  if (!firestoreRest) {
-    throw new Error("Firestore REST client not configured");
-  }
-
-  const { projectId, databaseId, apiKey } = firestoreRest;
-
-  // Let's check status-safe response body parser
-  const parseResponse = async (res: Response) => {
-    const contentType = res.headers.get("content-type");
-    if (res.status === 204) return {};
-    if (contentType && contentType.includes("application/json")) {
-      try {
-        return await res.json();
-      } catch {
-        return {};
-      }
-    }
-    return {};
-  };
-
-  // Attempt with primary database id
-  let currentDbId = databaseId;
-  let url = subPathSuffix.startsWith(":")
-    ? `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents${subPathSuffix}?key=${apiKey}`
-    : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents/${collectionPath}${subPathSuffix}?key=${apiKey}`;
-
-  try {
-    const res = await fetchWithTimeout(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined
-    }, 15000);
-
-    if (res.ok) {
-      return await parseResponse(res);
-    }
-
-    const errText = await res.text();
-    console.warn(`[Firestore Alert] Direct DB ID "${currentDbId}" failed (Status ${res.status}): ${errText}`);
-
-    // If database or document is not found, or access issues, and not default DB yet, retry using default databaseId "(default)"
-    if (currentDbId !== "(default)" && (res.status === 404 || res.status === 403 || res.status === 400 || res.status === 401)) {
-      console.log(`♻️ [Firestore REST Fallback] Retrying operational token under default database ID "(default)"...`);
-      currentDbId = "(default)";
-      url = subPathSuffix.startsWith(":")
-        ? `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents${subPathSuffix}?key=${apiKey}`
-        : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents/${collectionPath}${subPathSuffix}?key=${apiKey}`;
-
-      const retryRes = await fetchWithTimeout(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined
-      }, 15000);
-
-      if (retryRes.ok) {
-        // Cache successful fallback DB ID in memory so we don't need to cycle it repeatedly
-        firestoreRest.databaseId = "(default)";
-        console.log(`✅ [Firestore REST Fallback] Successfully connected to default database. Persistent cached.`);
-        return await parseResponse(retryRes);
-      }
-
-      const retryError = await retryRes.text();
-      throw new Error(`Firestore default DB fallback retry failed: ${retryError}`);
-    } else {
-      throw new Error(`Firestore REST error: ${errText}`);
-    }
-  } catch (error: any) {
-    // If request timed out, aborted, or had a TCP issue and we haven't checked default DB yet, try as ultimate failover
-    if (currentDbId !== "(default)") {
-      console.warn(`[Firestore Alert] Network issue on primary DB ID "${currentDbId}". Attempting default failover retry...`, error.message);
-      currentDbId = "(default)";
-      url = subPathSuffix.startsWith(":")
-        ? `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents${subPathSuffix}?key=${apiKey}`
-        : `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${currentDbId}/documents/${collectionPath}${subPathSuffix}?key=${apiKey}`;
-
-      try {
-        const retryRes = await fetchWithTimeout(url, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: body ? JSON.stringify(body) : undefined
-        }, 15000);
-
-        if (retryRes.ok) {
-          firestoreRest.databaseId = "(default)";
-          console.log(`✅ [Firestore REST Failover] Restored connection to default database successfully.`);
-          return await parseResponse(retryRes);
-        }
-      } catch (retryErr: any) {
-        console.error(`Firestore REST double-fault failure:`, retryErr.message);
-      }
-    }
-    throw error;
-  }
-}
-
-function mergeCouriers(localList: Courier[], firestoreList: Courier[]): Courier[] {
-  const mergedMap = new Map<string, Courier>();
-  for (const item of localList) {
-    mergedMap.set(item.id, item);
-  }
-  for (const item of firestoreList) {
-    const existingLocal = mergedMap.get(item.id);
-    if (existingLocal) {
-      mergedMap.set(item.id, {
-        ...existingLocal,
-        ...item,
-        apps: item.apps && item.apps.length > 0 ? item.apps : existingLocal.apps,
-      });
-    } else {
-      mergedMap.set(item.id, item);
-    }
-  }
-  const mergedList = Array.from(mergedMap.values());
-  writeCouriersFile(mergedList);
-  return mergedList;
-}
-
-async function readAllCouriers(): Promise<Courier[]> {
-  const localList = readCouriersFile();
-
-  // 1. Try Native Firestore Client (Highest performance, native auth)
-  if (firestoreClient) {
-    try {
-      const snapshot = await firestoreClient.collection("couriers").get();
-      const firestoreList: Courier[] = [];
-      snapshot.forEach((doc) => {
-        const d = doc.data();
-        firestoreList.push({
-          id: doc.id,
-          ...d,
-        } as Courier);
-      });
-      return mergeCouriers(localList, firestoreList);
-    } catch (sdkError: any) {
-      console.warn("⚠️ Native Firestore SDK query failed, trying REST API fallback...", sdkError.message);
-    }
-  }
-
-  // 2. Try REST API Client (Fallback)
-  if (firestoreRest) {
-    try {
-      const payload = {
-        structuredQuery: {
-          from: [{ collectionId: "couriers" }]
-        }
-      };
-      
-      const data = await callFirestoreREST("couriers", "POST", payload, ":runQuery");
-      const firestoreList: Courier[] = [];
-      const queryResults = Array.isArray(data) ? data : [];
-
-      for (const item of queryResults) {
-        if (!item.document) continue;
-        const d = item.document;
-        const id = d.name.split("/").pop() || "";
-        const fields = d.fields || {};
-        const courierData: any = {};
-        for (const key of Object.keys(fields)) {
-          courierData[key] = fromFirestoreValue(fields[key]);
-        }
-        firestoreList.push({
-          id,
-          name: courierData.name || "",
-          phone: courierData.phone || "",
-          city: courierData.city || "",
-          experience: courierData.experience || "",
-          apps: courierData.apps || [],
-          createdAt: courierData.createdAt || new Date().toISOString(),
-          status: courierData.status || "جديد",
-          interviewDate: courierData.interviewDate,
-          interviewTime: courierData.interviewTime,
-          nationalId: courierData.nationalId || "",
-          iban: courierData.iban || "",
-          carPlate: courierData.carPlate || "",
-          vehicleModel: courierData.vehicleModel || "",
-          appCourierCode: courierData.appCourierCode || "",
-          activationDate: courierData.activationDate || "",
-          adminNotes: courierData.adminNotes || "",
-        } as Courier);
-      }
-
-      return mergeCouriers(localList, firestoreList);
-    } catch (restError: any) {
-      console.error("Firestore REST list failed, fallback to local JSON database.", restError.message);
-    }
-  }
-
-  return localList;
-}
-
-async function saveCourier(courier: Courier) {
-  // 1. Write to local memory/disk immediately so data is secure and persisted instantly
-  const localList = readCouriersFile();
-  const index = localList.findIndex((c) => c.id === courier.id);
-  if (index !== -1) {
-    localList[index] = courier;
-  } else {
-    localList.push(courier);
-  }
-  writeCouriersFile(localList);
-
-  // 2. Try native Firestore Client first
-  if (firestoreClient) {
-    try {
-      await firestoreClient.collection("couriers").doc(courier.id).set(courier);
-      console.log(`Document ${courier.id} successfully saved to Native Cloud Firestore.`);
-      return;
-    } catch (sdkError: any) {
-      console.warn("⚠️ Native Firestore SDK set failed, trying REST API fallback...", sdkError.message);
-    }
-  }
-
-  // 3. Fallback to Cloud Firestore REST API
-  if (firestoreRest) {
-    try {
-      const fields: any = {};
-      const rawObj: any = {
-        name: courier.name,
-        phone: courier.phone,
-        city: courier.city,
-        experience: courier.experience,
-        apps: courier.apps,
-        createdAt: courier.createdAt,
-        status: courier.status,
-        interviewDate: courier.interviewDate || "",
-        interviewTime: courier.interviewTime || "",
-        nationalId: courier.nationalId || "",
-        iban: courier.iban || "",
-        carPlate: courier.carPlate || "",
-        vehicleModel: courier.vehicleModel || "",
-        appCourierCode: courier.appCourierCode || "",
-        activationDate: courier.activationDate || "",
-        adminNotes: courier.adminNotes || "",
-      };
-
-      for (const key of Object.keys(rawObj)) {
-        fields[key] = toFirestoreValue(rawObj[key]);
-      }
-
-      await callFirestoreREST("couriers", "PATCH", { fields }, `/${courier.id}`);
-      console.log(`Document ${courier.id} successfully synchronized to Cloud Firestore REST.`);
-    } catch (e: any) {
-      console.error("Failed to synchronize to Firestore REST, stored locally.", e.message);
-    }
-  }
-}
-
-async function deleteCourier(id: string) {
-  // 1. Delete from local JSON file
-  const localList = readCouriersFile();
-  const filtered = localList.filter((c) => c.id !== id);
-  writeCouriersFile(filtered);
-
-  // 2. Try Native Firestore Client first
-  if (firestoreClient) {
-    try {
-      await firestoreClient.collection("couriers").doc(id).delete();
-      console.log(`Document ${id} successfully deleted from Native Cloud Firestore.`);
-      return;
-    } catch (sdkError: any) {
-      console.warn("⚠️ Native Firestore SDK delete failed, trying REST API fallback...", sdkError.message);
-    }
-  }
-
-  // 3. Fallback to Cloud Firestore REST API
-  if (firestoreRest) {
-    try {
-      await callFirestoreREST("couriers", "DELETE", null, `/${id}`);
-      console.log(`Document ${id} successfully deleted from Cloud Firestore REST.`);
-    } catch (e: any) {
-      console.error("Failed to delete document from Firestore REST.", e.message);
-    }
-  }
-}
-
-function mergeTickets(localList: SupportTicket[], firestoreList: SupportTicket[]): SupportTicket[] {
-  const mergedMap = new Map<string, SupportTicket>();
-  for (const item of localList) {
-    mergedMap.set(item.id, item);
-  }
-  for (const item of firestoreList) {
-    const existingLocal = mergedMap.get(item.id);
-    if (existingLocal) {
-      mergedMap.set(item.id, {
-        ...existingLocal,
-        ...item,
-        messages: item.messages && item.messages.length >= existingLocal.messages.length ? item.messages : existingLocal.messages,
-      });
-    } else {
-      mergedMap.set(item.id, item);
-    }
-  }
-  const mergedList = Array.from(mergedMap.values());
-  writeTicketsFile(mergedList);
-  return mergedList;
-}
-
-async function readAllTickets(): Promise<SupportTicket[]> {
-  const localList = readTicketsFile();
-
-  // 1. Try Native Firestore Client
-  if (firestoreClient) {
-    try {
-      const snapshot = await firestoreClient.collection("support_tickets").get();
-      const firestoreList: SupportTicket[] = [];
-      snapshot.forEach((doc) => {
-        const d = doc.data();
-        firestoreList.push({
-          id: doc.id,
-          ...d,
-        } as SupportTicket);
-      });
-      return mergeTickets(localList, firestoreList);
-    } catch (sdkError: any) {
-      console.warn("⚠️ Native Firestore SDK tickets query failed, trying REST API fallback...", sdkError.message);
-    }
-  }
-
-  // 2. Try REST API Client
-  if (firestoreRest) {
-    try {
-      const payload = {
-        structuredQuery: {
-          from: [{ collectionId: "support_tickets" }]
-        }
-      };
-      
-      const data = await callFirestoreREST("support_tickets", "POST", payload, ":runQuery");
-      const firestoreList: SupportTicket[] = [];
-      const queryResults = Array.isArray(data) ? data : [];
-
-      for (const item of queryResults) {
-        if (!item.document) continue;
-        const d = item.document;
-        const id = d.name.split("/").pop() || "";
-        const fields = d.fields || {};
-        const ticketData: any = {};
-        for (const key of Object.keys(fields)) {
-          ticketData[key] = fromFirestoreValue(fields[key]);
-        }
-        firestoreList.push({
-          id,
-          courierName: ticketData.courierName || "",
-          courierPhone: ticketData.courierPhone || "",
-          category: ticketData.category || "",
-          subject: ticketData.subject || "",
-          status: ticketData.status || "جديد",
-          createdAt: ticketData.createdAt || new Date().toISOString(),
-          updatedAt: ticketData.updatedAt || new Date().toISOString(),
-          messages: ticketData.messages || [],
-        });
-      }
-
-      return mergeTickets(localList, firestoreList);
-    } catch (restError: any) {
-      console.error("Firestore support collection list failed, fallback to local JSON database.", restError.message);
-    }
-  }
-
-  return localList;
-}
-
-async function saveSupportTicket(ticket: SupportTicket) {
-  // 1. Local backup
-  const localList = readTicketsFile();
-  const index = localList.findIndex((t) => t.id === ticket.id);
-  if (index !== -1) {
-    localList[index] = ticket;
-  } else {
-    localList.push(ticket);
-  }
-  writeTicketsFile(localList);
-
-  // 2. Try Native Firestore Client first
-  if (firestoreClient) {
-    try {
-      await firestoreClient.collection("support_tickets").doc(ticket.id).set(ticket);
-      console.log(`Support ticket ${ticket.id} successfully saved to Native Cloud Firestore.`);
-      return;
-    } catch (sdkError: any) {
-      console.warn("⚠️ Native Firestore SDK ticket save failed, trying REST API fallback...", sdkError.message);
-    }
-  }
-
-  // 3. Fallback to Cloud Firestore REST API
-  if (firestoreRest) {
-    try {
-      const fields: any = {};
-      const rawObj: any = {
-        courierName: ticket.courierName,
-        courierPhone: ticket.courierPhone,
-        category: ticket.category,
-        subject: ticket.subject,
-        status: ticket.status,
-        createdAt: ticket.createdAt,
-        updatedAt: ticket.updatedAt,
-        messages: ticket.messages,
-      };
-
-      for (const key of Object.keys(rawObj)) {
-        fields[key] = toFirestoreValue(rawObj[key]);
-      }
-
-      await callFirestoreREST("support_tickets", "PATCH", { fields }, `/${ticket.id}`);
-      console.log(`Support ticket ${ticket.id} synchronized to Firestore REST.`);
-    } catch (e: any) {
-      console.error("Failed to sync ticket to Firestore (REST):", e.message);
-    }
-  }
-}
-
-// API Routes
-
-// 1. Register a courier
-app.post("/api/register", async (req, res) => {
-  try {
-    const { name, phone, city, experience, apps, nationalId, supervisorId, supervisorName, supervisorPhone } = req.body;
-
-    if (!name || !phone || !city) {
-      return res.status(400).json({ error: "الرجاء تعبئة جميع الحقول المطلوبة (الاسم، الجوال، المدينة)" });
-    }
-
-    const id = Date.now().toString() + Math.random().toString(36).substring(2, 7);
-    
-    const newCourier: Courier = {
-      id,
-      name,
-      phone,
-      city,
-      experience: experience || "لا توجد خبرات سابقة",
-      apps: Array.isArray(apps) ? apps : [],
-      createdAt: new Date().toISOString(),
-      status: "جديد", // Default status
-      nationalId: nationalId || "",
-      supervisorId: supervisorId || "direct",
-      supervisorName: supervisorName || "تسجيل مباشر (بدون مشرف)",
-      supervisorPhone: supervisorPhone || "0599612490",
-      agreementAccepted: false,
-    };
-
-    await saveCourier(newCourier);
-
-    res.json({ success: true, courierId: id });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل حفظ البيانات: " + error.message });
+    res.json({ success: true, apps });
+  } catch (e) {
+    res.json({ success: true, apps: APPS_BASE.map(a => ({ ...a, isAvailable: true, region: "مستوى المملكة", warningMessage: "" })) });
   }
 });
 
-// 2. Schedule interview
+// ============================================================
+// Register & Schedule
+// ============================================================
+app.post("/api/register", async (req, res) => {
+  try {
+    const b = req.body;
+    if (!b.name || !b.phone || !b.city)
+      return res.status(400).json({ success: false, error: "الاسم والجوال والمدينة مطلوبة" });
+    const existing = await db("couriers", "GET", undefined, `phone=eq.${b.phone}`);
+    if (existing.length > 0)
+      return res.status(409).json({ success: false, error: "رقم الجوال مسجل مسبقاً" });
+    const data = await db("couriers", "POST", {
+      name: b.name, phone: b.phone, city: b.city,
+      experience: b.experience || "", apps: b.apps || [],
+      national_id: b.nationalId || "", status: "جديد",
+      interview_date: "", interview_time: "", admin_notes: "",
+      supervisor_id: b.supervisorId || "",
+    });
+    const courier = Array.isArray(data) ? data[0] : data;
+    if (N8N_WEBHOOK) {
+      fetch(N8N_WEBHOOK, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "new_courier", courier: mapCourier(courier), timestamp: new Date().toISOString() }),
+      }).catch(() => {});
+    }
+    res.status(201).json({ success: true, courierId: courier.id, courier: mapCourier(courier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 app.post("/api/schedule", async (req, res) => {
   try {
     const { courierId, interviewDate, interviewTime } = req.body;
-
-    if (!courierId || !interviewDate || !interviewTime) {
-      return res.status(400).json({ error: "الرجاء تحديد موعد وتاريخ المقابلة" });
-    }
-
-    const couriers = await readAllCouriers();
-    const index = couriers.findIndex((c) => c.id === courierId);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "طلب التقديم غير موجود" });
-    }
-
-    couriers[index].interviewDate = interviewDate;
-    couriers[index].interviewTime = interviewTime;
-    
-    await saveCourier(couriers[index]);
-
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل جدولة الموعد: " + error.message });
-  }
+    if (!courierId || !interviewDate || !interviewTime)
+      return res.status(400).json({ success: false, error: "بيانات الجدولة غير مكتملة" });
+    const data = await db("couriers", "PATCH",
+      { interview_date: interviewDate, interview_time: interviewTime, status: "تمت المقابلة" },
+      `id=eq.${courierId}`
+    );
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 2.5 Get courier by id (for remote client-side status tracking / updates)
-app.get("/api/couriers/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const couriers = await readAllCouriers();
-    const courier = couriers.find((c) => c.id === id);
-
-    if (!courier) {
-      return res.status(404).json({ error: "طلب التقديم غير موجود" });
-    }
-
-    res.json({ success: true, courier });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل جلب الملف: " + error.message });
-  }
-});
-
-// 2.75 Look up courier by phone number or national ID (Restoring session / check status)
 app.post("/api/couriers/lookup", async (req, res) => {
   try {
     const { query } = req.body;
-    if (!query) {
-      return res.status(400).json({ error: "الرجاء إدخال رقم الجوال أو رقم الهوية الوطنية للاستعلام" });
-    }
-
-    const cleanQuery = query.replace(/\s+/g, "").trim();
-    if (!cleanQuery) {
-      return res.status(400).json({ error: "الرجاء إدخال رقم استعلام صالح" });
-    }
-
-    const couriers = await readAllCouriers();
-    const courier = couriers.find((c) => {
-      const matchPhone = c.phone && c.phone.replace(/\s+/g, "").includes(cleanQuery);
-      const matchNationalId = c.nationalId && c.nationalId.replace(/\s+/g, "").includes(cleanQuery);
-      return matchPhone || matchNationalId;
-    });
-
-    if (!courier) {
-      return res.status(404).json({ error: "لم نجد أي طلب تقديم مسجل بهذا الرقم. يرجى التأكد وإعادة المحاولة أو إنشاء طلب جديد." });
-    }
-
-    res.json({ success: true, courier });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل الاستعلام عن حالة الطلب: " + error.message });
-  }
+    if (!query) return res.status(400).json({ success: false, error: "أدخل رقم الجوال أو الهوية" });
+    let data = await db("couriers", "GET", undefined, `phone=eq.${query}`);
+    if (!data.length) data = await db("couriers", "GET", undefined, `national_id=eq.${query}`);
+    if (!data.length) return res.status(404).json({ success: false, error: "لم يتم العثور على أي طلب تقديم مطابق" });
+    res.json({ success: true, courier: mapCourier(data[0]) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 2.80 Get delivery apps with dynamic administrative overrides
-app.get("/api/delivery-apps", (req, res) => {
+// ============================================================
+// QR - صفحة بيانات المندوب
+// ============================================================
+app.get("/api/courier-profile/:id", async (req, res) => {
   try {
-    const settings = readSettingsFile();
-    // Static app descriptions from list, client will consume these merged
-    const staticApps = [
-      { id: "hungerstation", name: "هنقرستيشن (Hungerstation)", description: "برنامج بوارق الحصري لربط حسابات هنقرستيشن مباشرة وتوزيع الطلبات بنسب تشغيلية مريحة.", logo: "🚚", color: "from-amber-500 to-amber-600" },
-      { id: "toyou", name: "تويو (ToYou)", description: "تفعيل مباشر لكود كابتن تويو على مستوى المملكة مع دعم فني أسبوعي متكامل.", logo: "⚡", color: "from-cyan-400 to-cyan-500" },
-      { id: "keeta", name: "كيتا (Keeta)", description: "الانضمام لبرنامج كابتن كيتا المعتمد بامتيازات وحوافز وحصانة من الغرامات لشركاء بوارق.", logo: "📦", color: "from-emerald-400 to-emerald-500" },
-      { id: "thechefs", name: "ذا شفز (The Chefs)", description: "توزيع وجبات وحلويات فاخرة بمناطق تشغيلية ممتازة ومعدلات ربح مميزة.", logo: "🧁", color: "from-purple-400 to-pink-500" },
-      { id: "mrsool", name: "مرسول (Mrsool)", description: "عمل مرن وحر للغاية لتوصيل أي شيء في أي وقت لأكثر من 5 ملايين مستخدم نشط بالمملكة.", logo: "🦅", color: "from-blue-400 to-indigo-500" },
-      { id: "jahez", name: "جاهز (Jahez)", description: "الكود الأكثر طلباً، تفعيل مباشر مع بوارق الشرق وحقائب حرارية مطابقة للمواصفات ونسبة عمولة ثابتة ومنافسة.", logo: "🎯", color: "from-rose-400 to-orange-500" }
-    ];
-
-    const mergedApps = staticApps.map((app) => {
-      const override = settings[app.id] || { isAvailable: true, region: "مستوى المملكة", warningMessage: "" };
-      const explicitAvailable = override.isAvailable === true || override.isAvailable === "true" || override.isAvailable === undefined;
-      return {
-        ...app,
-        isAvailable: explicitAvailable,
-        region: override.region || "مستوى المملكة",
-        warningMessage: override.warningMessage || ""
-      };
-    });
-
-    res.json({ success: true, apps: mergedApps });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل جلب تطبيقات التوصيل: " + error.message });
-  }
+    const data = await db("couriers", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!data.length) return res.status(404).json({ error: "المندوب غير موجود" });
+    res.json({ success: true, courier: mapCourier(data[0]) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2.85 Save/Update delivery app settings (Admin panel action)
-app.post("/api/admin/update-app-settings", (req, res) => {
+app.get("/courier/:id", async (req, res) => {
   try {
-    const { password, id, isAvailable, region, warningMessage } = req.body;
-    if (password !== "bawariq2026") {
-      return res.status(403).json({ error: "عذراً، الرمز السري بغير محلّه المصرح به لـ بوارق" });
+    const data = await db("couriers", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!data.length) return res.status(404).send("<h1 style='font-family:Arial;text-align:center;margin-top:50px'>المندوب غير موجود</h1>");
+    const c = data[0];
+    const statusColor = c.status === "تم التفعيل" ? "#10b981" : c.status === "تمت المقابلة" ? "#06b6d4" : "#f59e0b";
+    let supervisorName = "";
+    if (c.supervisor_id) {
+      const sup = await db("supervisors", "GET", undefined, `id=eq.${c.supervisor_id}`).catch(() => []);
+      if (sup.length) supervisorName = sup[0].name;
     }
-
-    if (!id) {
-      return res.status(400).json({ error: "الرجاء تحديد معرف التطبيق لتعديله" });
-    }
-
-    const settings = readSettingsFile();
-    settings[id] = {
-      id,
-      isAvailable: isAvailable !== undefined ? isAvailable : true,
-      region: region || "مستوى المملكة",
-      warningMessage: warningMessage || ""
-    };
-
-    writeSettingsFile(settings);
-    res.json({ success: true, settings: settings[id] });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل تحديث إعدادات التطبيق: " + error.message });
-  }
+    res.send(`<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>بطاقة المندوب - ${c.name}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.card { background: #1e293b; border: 1px solid #334155; border-radius: 20px; padding: 32px 24px; max-width: 380px; width: 100%; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
+.logo { font-size: 12px; color: #64748b; margin-bottom: 20px; letter-spacing: 2px; }
+.avatar { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #f59e0b, #d97706); display: flex; align-items: center; justify-content: center; font-size: 36px; margin: 0 auto 16px; }
+.name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+.city { font-size: 13px; color: #94a3b8; margin-bottom: 16px; }
+.status { display: inline-block; padding: 6px 18px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-bottom: 24px; background: ${statusColor}22; color: ${statusColor}; border: 1px solid ${statusColor}44; }
+.info-box { background: #0f172a; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+.info-row:last-child { border-bottom: none; }
+.info-label { color: #64748b; }
+.info-value { color: #e2e8f0; font-weight: 600; }
+.apps { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 16px 0; }
+.app-tag { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b44; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.footer { font-size: 11px; color: #475569; margin-top: 16px; }
+.verified { color: #10b981; font-size: 12px; margin-top: 8px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🚀 بوارق الشرق للخدمات اللوجستية</div>
+  <div class="avatar">🛵</div>
+  <div class="name">${c.name}</div>
+  <div class="city">📍 ${c.city}</div>
+  <div class="status">${c.status || "جديد"}</div>
+  <div class="info-box">
+    <div class="info-row"><span class="info-label">المشرف</span><span class="info-value">${supervisorName || "—"}</span></div>
+    <div class="info-row"><span class="info-label">موعد المقابلة</span><span class="info-value">${c.interview_date ? c.interview_date.split(" (")[0] : "لم يحدد بعد"}</span></div>
+    <div class="info-row"><span class="info-label">الوقت</span><span class="info-value">${c.interview_time || "—"}</span></div>
+    <div class="info-row"><span class="info-label">تاريخ التسجيل</span><span class="info-value">${new Date(c.created_at).toLocaleDateString("ar-SA")}</span></div>
+  </div>
+  <div class="apps">${(c.apps || []).map(a => `<span class="app-tag">${a.toUpperCase()}</span>`).join("") || "<span style='color:#475569;font-size:12px'>لا توجد تطبيقات</span>"}</div>
+  <div class="footer">رقم التعريف: ${c.id.substring(0, 8).toUpperCase()}</div>
+  <div class="verified">✓ موثق من بوارق الشرق</div>
+</div>
+</body>
+</html>`);
+  } catch (e) { res.status(500).send("<h1>حدث خطأ</h1>"); }
 });
 
-// --- Supervisors Manager APIs ---
-
-// 1. Get all supervisors
-app.get("/api/supervisors", (req, res) => {
-  try {
-    if (!fs.existsSync(SUPERVISORS_FILE)) {
-      const defaultSupervisors = [
-        { id: "direct", name: "تسجيل مباشر (بدون مشرف)", phone: "0599612490", active: true },
-        { id: "sup_1", name: "الأستاذ أحمد (مشرف المنطقة الشرقية)", phone: "0599612490", active: true },
-        { id: "sup_2", name: "الأستاذ خالد (مشرف الوسطى والرياض)", phone: "0599612490", active: true },
-        { id: "sup_3", name: "الأستاذ محمد (مشرف الغربية وجدة)", phone: "0599612490", active: true }
-      ];
-      fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(defaultSupervisors, null, 2), "utf8");
-    }
-    
-    let supervisors = [];
-    try {
-      const supContent = fs.readFileSync(SUPERVISORS_FILE, "utf8");
-      supervisors = supContent ? JSON.parse(supContent) : [];
-    } catch (parseErr) {
-      console.warn("⚠️ Error parsing supervisors file. Resetting to default.", parseErr);
-      const defaultSupervisors = [
-        { id: "direct", name: "تسجيل مباشر (بدون مشرف)", phone: "0599612490", active: true },
-        { id: "sup_1", name: "الأستاذ أحمد (مشرف المنطقة الشرقية)", phone: "0599612490", active: true },
-        { id: "sup_2", name: "الأستاذ خالد (مشرف الوسطى والرياض)", phone: "0599612490", active: true },
-        { id: "sup_3", name: "الأستاذ محمد (مشرف الغربية وجدة)", phone: "0599612490", active: true }
-      ];
-      fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(defaultSupervisors, null, 2), "utf8");
-      supervisors = defaultSupervisors;
-    }
-    res.json(supervisors);
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل جلب قائمة المشرفين: " + error.message });
-  }
-});
-
-// 2. Admin add supervisor
-app.post("/api/admin/supervisors/add", (req, res) => {
-  try {
-    const { password, name, phone } = req.body;
-    if (password !== "bawariq2026") {
-      return res.status(403).json({ error: "الرمز السري للإدارة غير صحيح" });
-    }
-    if (!name) {
-      return res.status(400).json({ error: "الرجاء إدخال اسم المشرف" });
-    }
-
-    let supervisors = [];
-    if (fs.existsSync(SUPERVISORS_FILE)) {
-      try {
-        const fileContent = fs.readFileSync(SUPERVISORS_FILE, "utf8");
-        supervisors = fileContent ? JSON.parse(fileContent) : [];
-      } catch (jsonErr) {
-        supervisors = [];
-      }
-    }
-
-    const newSupervisor = {
-      id: "sup_" + Date.now().toString(),
-      name: String(name).trim(),
-      phone: phone ? String(phone).trim() : "0599612490",
-      active: true
-    };
-
-    supervisors.push(newSupervisor);
-    fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(supervisors, null, 2), "utf8");
-    res.json({ success: true, supervisor: newSupervisor, supervisors });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل إضافة المشرف: " + error.message });
-  }
-});
-
-// 3. Admin delete supervisor
-app.post("/api/admin/supervisors/delete", (req, res) => {
-  try {
-    const { password, id } = req.body;
-    if (password !== "bawariq2026") {
-      return res.status(403).json({ error: "الرمز السري للإدارة غير صحيح" });
-    }
-    if (!id) {
-       return res.status(400).json({ error: "الرجاء تحديد معرّف المشرف لحذفه" });
-    }
-    if (id === "direct") {
-      return res.status(400).json({ error: "لا يمكن حذف مشرف المتابعة المباشرة الأساسي" });
-    }
-
-    let supervisors = [];
-    if (fs.existsSync(SUPERVISORS_FILE)) {
-      try {
-        const fileContent = fs.readFileSync(SUPERVISORS_FILE, "utf8");
-        supervisors = fileContent ? JSON.parse(fileContent) : [];
-      } catch (jsonErr) {
-        supervisors = [];
-      }
-    }
-
-    supervisors = supervisors.filter((s: any) => s.id !== id);
-    fs.writeFileSync(SUPERVISORS_FILE, JSON.stringify(supervisors, null, 2), "utf8");
-    res.json({ success: true, supervisors });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل حذف المشرف: " + error.message });
-  }
-});
-
-// --- Agreement Accepts APIs ---
-app.post("/api/agreement/accept", async (req, res) => {
-  try {
-    const { courierId } = req.body;
-    if (!courierId) {
-      return res.status(400).json({ error: "الرجاء توفير معرّف المندوب" });
-    }
-
-    const couriers = await readAllCouriers();
-    const index = couriers.findIndex((c) => c.id === courierId);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "طلب المندوب المطلوب غير موجود" });
-    }
-
-    // Set agreement as accepted
-    couriers[index].agreementAccepted = true;
-    couriers[index].agreementAcceptedAt = new Date().toISOString();
-
-    console.log(`Courier ${couriers[index].name} accepted the work agreement.`);
-
-    await saveCourier(couriers[index]);
-
-    res.json({ success: true, courier: couriers[index] });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل توثيق اتفاقية العمل: " + error.message });
-  }
-});
-
-// 3. Admin: Get all couriers list (hidden page helper API)
-app.post("/api/admin/couriers", async (req, res) => {
-  try {
-    const couriers = await readAllCouriers();
-    // Sort by newest registered
-    const sorted = [...couriers].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return res.json({ success: true, couriers: sorted });
-  } catch (e: any) {
-    console.error("Crash avoided in admin couriers endpoint. Returning local fallback list.", e);
-    const fallbackList = readCouriersFile();
-    const sorted = [...fallbackList].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return res.json({ success: true, couriers: sorted });
-  }
-});
-
-// 4. Admin Download Excel compatible CSV
-app.get("/api/admin/download-csv", async (req, res) => {
-  try {
-    const { auth } = req.query;
-
-    const couriers = await readAllCouriers();
-    const sorted = [...couriers].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    // Define headers in Arabic
-    const headers = [
-      "معرّف الطلب",
-      "الاسم الكامل",
-      "رقم الجوال",
-      "المدينة / مكان التواجد",
-      "التطبيقات المراد العمل عليها",
-      "الخبرات السابقة",
-      "الحالة الحالية",
-      "المشرف المتابع للطلب",
-      "حالة اتفاقية العمل الرسمية",
-      "تاريخ التقديم",
-      "تاريخ المقابلة المختار",
-      "توقيت المقابلة المختار",
-      "رقم الهوية / الإقامة",
-      "رقم الآيبان البنكي (IBAN)",
-      "رقم لوحة المركبة",
-      "نوع وموديل المركبة",
-      "كود المندوب بالبرامج",
-      "تاريخ تفعيل الحساب",
-      "ملاحظات الإدارة والتشغيل"
-    ];
-
-    // Map data to CSV rows
-    const csvRows = [headers.join(",")];
-
-    for (const c of sorted) {
-      const appStr = c.apps && c.apps.length ? c.apps.join(" - ") : "جميع التطبيقات";
-      const escapeCsv = (str: string) => {
-        if (!str) return '""';
-        const clean = str.replace(/"/g, '""');
-        return `"${clean}"`;
-      };
-
-      const agreementStatus = c.agreementAccepted 
-        ? `موافق وموثق (${c.agreementAcceptedAt ? new Date(c.agreementAcceptedAt).toLocaleDateString("ar-SA") : ""})`
-        : "بانتظار الموافقة والتوقيع";
-
-      const row = [
-        escapeCsv(c.id),
-        escapeCsv(c.name),
-        escapeCsv(c.phone),
-        escapeCsv(c.city),
-        escapeCsv(appStr),
-        escapeCsv(c.experience),
-        escapeCsv(c.status || "جديد"),
-        escapeCsv(c.supervisorName || "تنظيم مباشر (بدون مشرف)"),
-        escapeCsv(agreementStatus),
-        escapeCsv(new Date(c.createdAt).toLocaleDateString("ar-SA") + " " + new Date(c.createdAt).toLocaleTimeString("ar-SA")),
-        escapeCsv(c.interviewDate || "لم يحدد بعد"),
-        escapeCsv(c.interviewTime || "لم يحدد بعد"),
-        escapeCsv(c.nationalId || "غير متوفر"),
-        escapeCsv(c.iban || "غير متوفر"),
-        escapeCsv(c.carPlate || "غير متوفر"),
-        escapeCsv(c.vehicleModel || "غير متوفر"),
-        escapeCsv(c.appCourierCode || "غير متوفر"),
-        escapeCsv(c.activationDate || "غير متوفر"),
-        escapeCsv(c.adminNotes || "لا توجد ملاحظات")
-      ];
-      csvRows.push(row.join(","));
-    }
-
-    // Join rows
-    const csvContent = csvRows.join("\n");
-    
-    // Add UTF-8 BOM so Microsoft Excel can read Arabic characters correctly!
-    const bom = Buffer.from("\uFEFF", "utf-8");
-    const payload = Buffer.concat([bom, Buffer.from(csvContent, "utf-8")]);
-
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="Bawariq_Logistics_Couriers_${new Date().toISOString().split('T')[0]}.csv"`);
-    res.status(200).send(payload);
-  } catch (error: any) {
-    res.status(500).send("حدث خطأ أثناء تحميل الكشف: " + error.message);
-  }
-});
-
-// 5. Admin: Update courier status (e.g. "جديد" | "تمت المقابلة" | "تم التفعيل")
-app.post("/api/admin/update-status", async (req, res) => {
-  try {
-    const { password, courierId, status } = req.body;
-
-    if (!courierId || !status) {
-      return res.status(400).json({ error: "الرجاء توفير معرّف المندوب والحالة المطلوبة" });
-    }
-
-    const couriers = await readAllCouriers();
-    const index = couriers.findIndex((c) => c.id === courierId);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "المندوب المطلوب غير موجود" });
-    }
-
-    couriers[index].status = status;
-    
-    // Automatically fill activation date if updated to activated
-    if (status === "تم التفعيل" && !couriers[index].activationDate) {
-      couriers[index].activationDate = new Date().toLocaleDateString("ar-SA");
-    }
-
-    await saveCourier(couriers[index]);
-
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل تحديث الحالة: " + error.message });
-  }
-});
-
-// 6. Admin: Complete/Update Activated Courier Complete Profile info
-app.post("/api/admin/update-profile", async (req, res) => {
-  try {
-    const { 
-      password, 
-      courierId, 
-      nationalId, 
-      iban, 
-      carPlate, 
-      vehicleModel, 
-      appCourierCode, 
-      activationDate, 
-      adminNotes 
-    } = req.body;
-
-    if (!courierId) {
-      return res.status(400).json({ error: "يجب تحديد معرّف المندوب المطلوب" });
-    }
-
-    const couriers = await readAllCouriers();
-    const index = couriers.findIndex((c) => c.id === courierId);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "الملف التشغيلي للمندوب غير موجود" });
-    }
-
-    // Apply properties
-    if (nationalId !== undefined) couriers[index].nationalId = nationalId;
-    if (iban !== undefined) couriers[index].iban = iban;
-    if (carPlate !== undefined) couriers[index].carPlate = carPlate;
-    if (vehicleModel !== undefined) couriers[index].vehicleModel = vehicleModel;
-    if (appCourierCode !== undefined) couriers[index].appCourierCode = appCourierCode;
-    if (activationDate !== undefined) couriers[index].activationDate = activationDate;
-    if (adminNotes !== undefined) couriers[index].adminNotes = adminNotes;
-
-    await saveCourier(couriers[index]);
-
-    res.json({ success: true, courier: couriers[index] });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل حفظ الملف التشغيلي الكامل: " + error.message });
-  }
-});
-
-// 6.5 Admin: Delete courier profile physically
-app.post("/api/admin/delete-courier", async (req, res) => {
-  try {
-    const { password, courierId } = req.body;
-    
-    if (!courierId) {
-      return res.status(400).json({ error: "يجب تحديد معرّف المندوب المطلوب حذفه" });
-    }
-
-    const couriers = await readAllCouriers();
-    const index = couriers.findIndex((c) => c.id === courierId);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "الملف التشغيلي غير موجود بالفعل" });
-    }
-
-    await deleteCourier(courierId);
-
-    res.json({ success: true, message: "تم حذف المندوب بنجاح" });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل حذف المندوب: " + error.message });
-  }
-});
-
-// === Support Ticket APIs ===
-
-// 7. Create Support Ticket
+// ============================================================
+// Support Tickets
+// ============================================================
 app.post("/api/support/tickets", async (req, res) => {
   try {
-    const { name, phone, category, subject, message, imageUrl } = req.body;
-
-    if (!name || !phone || !category || !subject || !message) {
-      return res.status(400).json({ error: "الرجاء توفير جميع البيانات المطلوبة لفتح التذكرة" });
-    }
-
-    const ticketId = "T-" + Math.floor(100000 + Math.random() * 900000);
-    const dateStr = new Date().toISOString();
-
-    const newTicket: SupportTicket = {
-      id: ticketId,
-      courierName: name,
-      courierPhone: phone,
-      category,
-      subject,
-      status: "جديد",
-      createdAt: dateStr,
-      updatedAt: dateStr,
-      messages: [
-        {
-          id: "m-" + Date.now().toString(),
-          sender: "courier",
-          text: message,
-          imageUrl: imageUrl || undefined,
-          createdAt: dateStr
-        }
-      ]
-    };
-
-    await saveSupportTicket(newTicket);
-    res.json({ success: true, ticket: newTicket });
-  } catch (error: any) {
-    res.status(500).json({ error: "فشل فتح تذكرة الدعم الفني: " + error.message });
-  }
+    const b = req.body;
+    if (!b.name || !b.phone || !b.subject)
+      return res.status(400).json({ success: false, error: "الاسم والجوال والموضوع مطلوبة" });
+    const messages = [];
+    if (b.message) messages.push({ sender: "courier", text: b.message, imageUrl: b.imageUrl || null, createdAt: new Date().toISOString() });
+    const data = await db("support_tickets", "POST", {
+      courier_name: b.name, courier_phone: b.phone,
+      category: b.category || "عام", subject: b.subject,
+      status: "جديد", messages, supervisor_id: b.supervisorId || "",
+    });
+    const ticket = Array.isArray(data) ? data[0] : data;
+    res.status(201).json({ success: true, ticket: mapTicket(ticket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 8. Search Tickets by Phone Number
 app.post("/api/support/search", async (req, res) => {
   try {
     const { phone } = req.body;
-    if (!phone) {
-      return res.status(400).json({ error: "الرجاء إدخال رقم الجوال للبحث عن التذاكر" });
-    }
-
-    const tickets = await readAllTickets();
-    const matched = tickets.filter(t => {
-      const p = t.courierPhone || "";
-      const searchP = phone || "";
-      return p === searchP || p.replace(/^0/, "") === searchP.replace(/^0/, "");
-    });
-    res.json({ success: true, tickets: matched });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+    if (!phone) return res.status(400).json({ success: false, error: "أدخل رقم الجوال" });
+    const data = await db("support_tickets", "GET", undefined, `courier_phone=eq.${phone}&order=created_at.desc`);
+    res.json({ success: true, tickets: data.map(mapTicket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 9. Get Single Ticket
-app.get("/api/support/tickets/:ticketId", async (req, res) => {
+app.get("/api/support/tickets/:id", async (req, res) => {
   try {
-    const { ticketId } = req.params;
-    const tickets = await readAllTickets();
-    const ticket = tickets.find(t => t.id === ticketId);
-
-    if (!ticket) {
-      return res.status(404).json({ error: "التذكرة المطلوبة غير موجودة" });
-    }
-    res.json({ success: true, ticket });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+    const data = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!data.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
+    res.json({ success: true, ticket: mapTicket(data[0]) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 10. Send Message inside Ticket
-app.post("/api/support/tickets/:ticketId/messages", async (req, res) => {
+app.post("/api/support/tickets/:id/messages", async (req, res) => {
   try {
-    const { ticketId } = req.params;
     const { sender, text, imageUrl } = req.body;
-
-    if (!text && !imageUrl) {
-      return res.status(400).json({ error: "الرجاء كتابة نص الرسالة أو إرفاق صورة" });
-    }
-
-    if (!sender) {
-      return res.status(400).json({ error: "المرسل مفقود في الطلب" });
-    }
-
-    const tickets = await readAllTickets();
-    const index = tickets.findIndex(t => t.id === ticketId);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "التذكرة غير موجودة" });
-    }
-
-    const nowStr = new Date().toISOString();
-    const newMessage: SupportMessage = {
-      id: "m-" + Date.now().toString() + Math.random().toString(36).substring(2, 5),
-      sender,
-      text: text || "",
-      imageUrl: imageUrl || undefined,
-      createdAt: nowStr
-    };
-
-    tickets[index].messages.push(newMessage);
-    tickets[index].updatedAt = nowStr;
-
-    // Smart status changing
-    if (sender === "admin") {
-      tickets[index].status = "تم الرد";
-    } else {
-      tickets[index].status = "قيد المتابعة";
-    }
-
-    await saveSupportTicket(tickets[index]);
-    res.json({ success: true, ticket: tickets[index] });
-  } catch (error: any) {
-    res.status(500).json({ error: "تفاصيل خطأ الإرسال: " + error.message });
-  }
+    const ticketData = await db("support_tickets", "GET", undefined, `id=eq.${req.params.id}`);
+    if (!ticketData.length) return res.status(404).json({ success: false, error: "التذكرة غير موجودة" });
+    const messages = ticketData[0].messages || [];
+    messages.push({ sender: sender || "courier", text: text || "", imageUrl: imageUrl || null, createdAt: new Date().toISOString() });
+    const newStatus = sender === "admin" ? "تم الرد" : "قيد المتابعة";
+    const data = await db("support_tickets", "PATCH", { messages, status: newStatus }, `id=eq.${req.params.id}`);
+    res.json({ success: true, ticket: mapTicket(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 11. Admin: List all tickets
+// ============================================================
+// Admin Endpoints
+// ============================================================
+app.post("/api/admin/couriers", async (req, res) => {
+  try {
+    if (!checkAdmin(req.body.password)) return res.status(403).json({ success: false, error: "كلمة المرور غير صحيحة" });
+    const data = await db("couriers", "GET", undefined, "order=created_at.desc");
+    res.json({ success: true, couriers: data.map(mapCourier) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/update-status", async (req, res) => {
+  try {
+    const { password, courierId, status } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", { status }, `id=eq.${courierId}`);
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/assign-supervisor", async (req, res) => {
+  try {
+    const { password, courierId, supervisorId } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", { supervisor_id: supervisorId }, `id=eq.${courierId}`);
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/update-profile", async (req, res) => {
+  try {
+    const { password, courierId, nationalId, iban, carPlate, vehicleModel, appCourierCode, activationDate, adminNotes, supervisorId } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("couriers", "PATCH", {
+      national_id: nationalId || "", iban: iban || "",
+      car_plate: carPlate || "", vehicle_model: vehicleModel || "",
+      app_courier_code: appCourierCode || "", activation_date: activationDate || "",
+      admin_notes: adminNotes || "", supervisor_id: supervisorId || "",
+    }, `id=eq.${courierId}`);
+    res.json({ success: true, courier: mapCourier(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/delete-courier", async (req, res) => {
+  try {
+    const { password, courierId } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    await db("couriers", "DELETE", undefined, `id=eq.${courierId}`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/update-app-settings", async (req, res) => {
+  try {
+    const { password, id, isAvailable, region, warningMessage } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("app_settings", "PATCH",
+      { is_available: isAvailable, region: region || "مستوى المملكة", warning_message: warningMessage || "" },
+      `id=eq.${id}`
+    );
+    res.json({ success: true, setting: Array.isArray(data) ? data[0] : data });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 app.post("/api/admin/tickets", async (req, res) => {
   try {
-    const tickets = await readAllTickets();
-    const sorted = [...tickets].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    return res.json({ success: true, tickets: sorted });
-  } catch (error: any) {
-    console.error("Crash avoided in admin tickets list. Returning local fallback tickets.", error);
-    const fallbackTickets = readTicketsFile();
-    const sorted = [...fallbackTickets].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    return res.json({ success: true, tickets: sorted });
-  }
+    if (!checkAdmin(req.body.password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("support_tickets", "GET", undefined, "order=created_at.desc");
+    res.json({ success: true, tickets: data.map(mapTicket) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 12. Admin: Update Ticket Status (Mute/Close)
 app.post("/api/admin/tickets/update-status", async (req, res) => {
   try {
     const { password, ticketId, status } = req.body;
-
-    const tickets = await readAllTickets();
-    const index = tickets.findIndex(t => t.id === ticketId);
-
-    if (index === -1) {
-      return res.status(404).json({ error: "التذكرة لم تكن موجودة بقاعدة البيانات" });
-    }
-
-    tickets[index].status = status;
-    tickets[index].updatedAt = new Date().toISOString();
-
-    await saveSupportTicket(tickets[index]);
-    res.json({ success: true, ticket: tickets[index] });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("support_tickets", "PATCH", { status }, `id=eq.${ticketId}`);
+    res.json({ success: true, ticket: mapTicket(Array.isArray(data) ? data[0] : data) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// Global JSON error handler to catch body-parser errors or other crashes
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const errMsg = `[ERROR] [${new Date().toISOString()}] ${req.method} ${req.url} - Error: ${err.message}\nStack: ${err.stack}\n\n`;
+// ============================================================
+// إدارة المشرفين - الإصلاح الرئيسي هنا
+// ============================================================
+app.post("/api/admin/supervisors", async (req, res) => {
   try {
-    fs.appendFileSync(DEBUG_LOG_FILE, errMsg, "utf8");
-  } catch (logErr) {}
-  
-  res.status(err.status || 500).json({
-    success: false,
-    error: err.message || "حدث خطأ داخلي في الخادم. الرجاء المحاولة مجدداً."
-  });
+    if (!checkAdmin(req.body.password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    const data = await db("supervisors", "GET", undefined, "order=created_at.asc");
+    res.json({ success: true, supervisors: data.map(mapSupervisor) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-async function start() {
-  // Vite integration
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+app.post("/api/admin/supervisors/add", async (req, res) => {
+  try {
+    const { password, name, phone } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    if (!name || !name.trim()) return res.status(400).json({ success: false, error: "اسم المشرف مطلوب" });
+    if (!phone || !phone.trim()) return res.status(400).json({ success: false, error: "رقم جوال المشرف مطلوب" });
+
+    // إنشاء ID تلقائي من الاسم + رقم عشوائي
+    const cleanName = name.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, "");
+    const id = cleanName + "_" + Date.now().toString().slice(-5);
+
+    // كلمة مرور افتراضية عشوائية
+    const defaultPassword = "sup" + Math.floor(1000 + Math.random() * 9000);
+
+    const data = await db("supervisors", "POST", {
+      id,
+      name: name.trim(),
+      password: defaultPassword,
+      phone: phone.trim(),
+      is_active: true,
     });
-    app.use(vite.middlewares);
-  } else {
-    // Serve static files in production
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+
+    const supervisor = Array.isArray(data) ? data[0] : data;
+
+    // جلب القائمة الكاملة للإرجاع
+    const allSupervisors = await db("supervisors", "GET", undefined, "order=created_at.asc");
+
+    res.status(201).json({
+      success: true,
+      supervisor: mapSupervisor(supervisor),
+      supervisors: allSupervisors.map(mapSupervisor),
+      defaultPassword, // إرجاع كلمة المرور للعرض للأدمن
+    });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/supervisors/delete", async (req, res) => {
+  try {
+    const { password, id } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    if (!id) return res.status(400).json({ success: false, error: "معرف المشرف مطلوب" });
+    await db("supervisors", "DELETE", undefined, `id=eq.${id}`);
+    const allSupervisors = await db("supervisors", "GET", undefined, "order=created_at.asc");
+    res.json({ success: true, supervisors: allSupervisors.map(mapSupervisor) });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/supervisors/update-password", async (req, res) => {
+  try {
+    const { password, supervisorId, newPassword } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    await db("supervisors", "PATCH", { password: newPassword }, `id=eq.${supervisorId}`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post("/api/admin/supervisors/toggle", async (req, res) => {
+  try {
+    const { password, supervisorId, isActive } = req.body;
+    if (!checkAdmin(password)) return res.status(403).json({ success: false, error: "غير مصرح" });
+    await db("supervisors", "PATCH", { is_active: isActive }, `id=eq.${supervisorId}`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.get("/api/admin/download-csv", async (req, res) => {
+  try {
+    const { auth } = req.query;
+    if (!checkAdmin(auth)) return res.status(403).send("غير مصرح");
+    const couriers = await db("couriers", "GET", undefined, "order=created_at.desc");
+    const supervisors = await db("supervisors", "GET").catch(() => []);
+    const supMap = {};
+    supervisors.forEach(s => { supMap[s.id] = s.name; });
+    const headers = ["الاسم","الجوال","المدينة","الهوية","التطبيقات","الحالة","المشرف","موعد المقابلة","وقت المقابلة","IBAN","المركبة","اللوحة","كود التطبيق","تاريخ التفعيل","الملاحظات","تاريخ التسجيل"];
+    const rows = couriers.map(c => [
+      c.name, c.phone, c.city, c.national_id || "",
+      (c.apps || []).join(" - "), c.status || "جديد",
+      supMap[c.supervisor_id] || "",
+      c.interview_date || "", c.interview_time || "",
+      c.iban || "", c.vehicle_model || "", c.car_plate || "",
+      c.app_courier_code || "", c.activation_date || "",
+      c.admin_notes || "", c.created_at || ""
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="bawariq-couriers-${new Date().toISOString().split("T")[0]}.csv"`);
+    res.send(csv);
+  } catch (e) { res.status(500).send("خطأ في تصدير البيانات"); }
+});
+
+// ============================================================
+// Settings & Stats
+// ============================================================
+app.get("/api/settings", async (req, res) => {
+  try {
+    const data = await db("app_settings", "GET");
+    const settings = {};
+    for (const row of data) { settings[row.id] = row; }
+    res.json(settings);
+  } catch (e) {
+    res.json({
+      hungerstation: { id: "hungerstation", is_available: true, region: "مستوى المملكة", warning_message: "" },
+      toyou: { id: "toyou", is_available: true, region: "مستوى المملكة", warning_message: "" },
+      keeta: { id: "keeta", is_available: true, region: "مستوى المملكة", warning_message: "" },
+      thechefs: { id: "thechefs", is_available: true, region: "مستوى المملكة", warning_message: "" },
+      mrsool: { id: "mrsool", is_available: true, region: "مستوى المملكة", warning_message: "" },
+      jahez: { id: "jahez", is_available: true, region: "مستوى المملكة", warning_message: "" },
     });
   }
+});
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-  });
-}
+app.get("/api/stats", async (req, res) => {
+  try {
+    const couriers = await db("couriers", "GET");
+    const tickets = await db("support_tickets", "GET").catch(() => []);
+    const cities = {};
+    for (const c of couriers) { cities[c.city] = (cities[c.city] || 0) + 1; }
+    res.json({
+      total: couriers.length,
+      new: couriers.filter(c => c.status === "جديد").length,
+      interviewed: couriers.filter(c => c.status === "تمت المقابلة").length,
+      activated: couriers.filter(c => c.status === "تم التفعيل").length,
+      open_tickets: tickets.filter(t => t.status !== "مغلق").length,
+      cities,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-start();
+// ============================================================
+// Catch-all
+// ============================================================
+app.get("*", (req, res) => {
+  const indexPath = path.join(__dirname, "..", "dist", "index.html");
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.json({ message: "بوارق الشرق API تعمل ✅", database: "Supabase" });
+  }
+});
 
 export default app;
