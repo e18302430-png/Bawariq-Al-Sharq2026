@@ -102,8 +102,11 @@ export default function App() {
         localStorage.setItem("bawariq_courier_step", "3");
         localStorage.setItem("bawariq_courier_scheduled_date", courier.interviewDate);
         localStorage.setItem("bawariq_courier_scheduled_time", courier.interviewTime);
+      } else if (courier.agreementAccepted) {
+        setStep(2.5); // scheduler
+        localStorage.setItem("bawariq_courier_step", "2.5");
       } else {
-        setStep(2); // scheduler
+        setStep(2); // pricing & agreement
         localStorage.setItem("bawariq_courier_step", "2");
       }
 
@@ -212,7 +215,7 @@ export default function App() {
     setCourierId(id);
     setCourierName(info.name);
     setRegistrationInfo(info);
-    setStep(2); // Move instantly to scheduling interview
+    setStep(2); // Move instantly to Pricing & Agreement ( العقد والتسعيرات والتوقيع )
 
     localStorage.setItem("bawariq_courier_step", "2");
     localStorage.setItem("bawariq_courier_id", id);
@@ -221,19 +224,19 @@ export default function App() {
     localStorage.setItem("bawariq_courier_phone", info.phone); // auto-fill support form!
   };
 
+  const handleAgreementSuccess = () => {
+    setStep(2.5); // Move next to Appointment Scheduler ( حجز الموعد )
+    localStorage.setItem("bawariq_courier_step", "2.5");
+  };
+
   const handleScheduleSuccess = (date: string, time: string) => {
     setScheduledDate(date);
     setScheduledTime(time);
-    setStep(2.5); // Move first to pricing rates & official work agreement acceptance page!
+    setStep(3); // Move finally to ticket summary page ( رقم التصريح بالبدء والـ QR )
 
-    localStorage.setItem("bawariq_courier_step", "2.5");
+    localStorage.setItem("bawariq_courier_step", "3");
     localStorage.setItem("bawariq_courier_scheduled_date", date);
     localStorage.setItem("bawariq_courier_scheduled_time", time);
-  };
-
-  const handleAgreementSuccess = () => {
-    setStep(3);
-    localStorage.setItem("bawariq_courier_step", "3");
   };
 
   const handleReset = () => {
@@ -324,9 +327,9 @@ export default function App() {
                     <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">مراحل توثيق الحساب</span>
                     <h3 className="text-sm font-bold text-white">
                       {step === 1 && "تقديم البيانات الشخصية واختيار التطبيق"}
-                      {step === 2 && "جدولة موعد المقابلة والتحقق"}
-                      {step === 2.5 && "شروط وضوابط العمل والعقد التشغيلي"}
-                      {step === 3 && "الحصول على تصريح الدخول والبدء"}
+                      {step === 2 && "شروط وضوابط العمل والعقد التشغيلي للتوقيع"}
+                      {step === 2.5 && "جدولة موعد المقابلة واختيار الوقت"}
+                      {step === 3 && "الحصول على تصريح الدخول وبدء العمل"}
                     </h3>
                   </div>
                 </div>
@@ -335,9 +338,11 @@ export default function App() {
                 <div className="flex flex-wrap items-center gap-1.5 sm:gap-3 text-xs font-semibold w-full md:w-auto justify-end">
                   <span className={`px-2.5 py-1 rounded-md text-[10px] ${step >= 1 ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-900 text-slate-600"}`}>الاسم والتطبيق</span>
                   <span className="text-slate-700">←</span>
-                  <span className={`px-2.5 py-1 rounded-md text-[10px] ${step >= 2 ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-900 text-slate-600"}`}>حجز الموعد</span>
+                  <span className={`px-2.5 py-1 rounded-md text-[10px] ${step >= 2 ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-900 text-slate-600"}`}>العقد والتسعيرة</span>
                   <span className="text-slate-700">←</span>
-                  <span className={`px-2.5 py-1 rounded-md text-[10px] ${step >= 3 ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-900 text-slate-600"}`}>رقم التصريح</span>
+                  <span className={`px-2.5 py-1 rounded-md text-[10px] ${step >= 2.5 ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-900 text-slate-600"}`}>حجز الموعد</span>
+                  <span className="text-slate-700">←</span>
+                  <span className={`px-2.5 py-1 rounded-md text-[10px] ${step >= 3 ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-900 text-slate-600"}`}>رقم التصريح والبدء</span>
                   
                   {/* Start over button */}
                   <button
@@ -660,21 +665,21 @@ export default function App() {
 
             {step === 2 && (
               <div className="max-w-3xl mx-auto">
-                <AppointmentScheduler 
-                  courierId={courierId} 
+                <PricingAndAgreement 
+                  courierId={courierId}
                   courierName={courierName}
-                  onSuccess={handleScheduleSuccess}
-                  onReset={handleReset}
+                  onSuccess={handleAgreementSuccess}
                 />
               </div>
             )}
 
             {step === 2.5 && (
               <div className="max-w-3xl mx-auto">
-                <PricingAndAgreement 
-                  courierId={courierId}
+                <AppointmentScheduler 
+                  courierId={courierId} 
                   courierName={courierName}
-                  onSuccess={handleAgreementSuccess}
+                  onSuccess={handleScheduleSuccess}
+                  onReset={handleReset}
                 />
               </div>
             )}

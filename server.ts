@@ -134,6 +134,7 @@ interface Courier {
   supervisorPhone?: string;
   agreementAccepted?: boolean;
   agreementAcceptedAt?: string;
+  agreementSignature?: string;
 }
 
 interface SupportMessage {
@@ -226,7 +227,9 @@ const { Pool } = pg;
 let pgPool: pg.Pool | null = null;
 const pgDbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_URL_NON_POOLING;
 
-if (pgDbUrl) {
+const isPlaceholderPg = pgDbUrl && (pgDbUrl.includes("@base") || pgDbUrl.includes("://base") || pgDbUrl === "base");
+
+if (pgDbUrl && !isPlaceholderPg) {
   try {
     pgPool = new Pool({
       connectionString: pgDbUrl,
@@ -236,6 +239,8 @@ if (pgDbUrl) {
   } catch (err: any) {
     console.error("⚠️ Failed to initialize PostgreSQL Pool client:", err.message);
   }
+} else if (isPlaceholderPg) {
+  console.log("ℹ️ Detected placeholder PostgreSQL connection URL pointing to 'base' (Unresolvable sandbox dummy). Skipping PostgreSQL client instantiation. Using Supabase REST APIs & local fallback database instead.");
 }
 
 // 🌐 Helper to dynamically resolve and heal invalid or swapped Supabase properties
@@ -603,6 +608,8 @@ async function initPgDb() {
     }
   } catch (err: any) {
     console.error("⚠️ Failed to run PostgreSQL initialization schema:", err.message);
+    console.log("ℹ️ Setting pgPool to null to prevent further failed connection attempts.");
+    pgPool = null;
   }
 }
 
@@ -2263,13 +2270,20 @@ async function start() {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
+      if (req.url.startsWith("/api/")) {
+        return res.status(404).json({ success: false, error: "API Route not found / مسار برمجية الربط غير موجود" });
+      }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running at http://localhost:${PORT}`);
+    });
+  } else {
+    console.log("ℹ️ Serverless mode active on Vercel. Skipping app.listen().");
+  }
 }
 
 start();
