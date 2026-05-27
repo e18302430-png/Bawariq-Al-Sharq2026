@@ -143,9 +143,11 @@ export default function App() {
     const savedTime = localStorage.getItem("bawariq_courier_scheduled_time");
     const savedName = localStorage.getItem("bawariq_courier_name");
 
-    if (savedStep) {
-      setStep(Number(savedStep));
-    }
+   if (savedStep) {
+  setStep(Number(savedStep));
+} else {
+  setStep(1);
+}
     if (savedId) {
       setCourierId(savedId);
     }
