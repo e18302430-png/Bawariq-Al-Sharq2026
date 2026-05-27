@@ -685,31 +685,54 @@ function writeCouriersFile(couriers: Courier[]) {
 }
 
 // Read App Settings Helper
-function readSettingsFile(): Record<string, any> {
+async function readSettings(): Promise<Record<string, any>> {
   const defaultSettings = {
-    hungerstation: { id: "hungerstation", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
+    hungerstation: { id: "hungerstation", isAvailable: false, region: "مستوى المملكة", warningMessage: "" },
     toyou: { id: "toyou", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
     keeta: { id: "keeta", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
     thechefs: { id: "thechefs", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
     mrsool: { id: "mrsool", isAvailable: true, region: "مستوى المملكة", warningMessage: "" },
-    jahez: { id: "jahez", isAvailable: true, region: "مستوى المملكة", warningMessage: "" }
+    jahez: { id: "jahez", isAvailable: false, region: "مستوى المملكة", warningMessage: "" }
   };
-  try {
-    if (!fs.existsSync(SETTINGS_FILE)) return defaultSettings;
-    const content = fs.readFileSync(SETTINGS_FILE, "utf8");
-    return JSON.parse(content);
-  } catch (error) {
-    console.error("Error reading settings file:", error);
-    return defaultSettings;
-  }
-}
 
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+    try {
+      const sList = await callSupabase("app_settings", "GET");
+      if (sList && Array.isArray(sList) && sList.length > 0) {
+        const settingsMap: Record<string, any> = {};
+        for (const row of sList) {
+          settingsMap[row.id] = {
+            id: row.id,
+            isAvailable: row.is_available,
+            region: row.region || "مستوى المملكة",
+            warningMessage: row.warning_message || ""
+          };
+        }
+        return settingsMap;
+      }
+    } catch (err: any) {
+      console.error("⚠️ Supabase error reading app settings:", err.message);
+    }
+  }
+  return defaultSettings;
+}
 // Write App Settings Helper
-function writeSettingsFile(settings: Record<string, any>) {
-  try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf8");
-  } catch (error) {
-    console.error("Error writing settings file:", error);
+async function writeSettings(settings: Record<string, any>) {
+  writeSettingsFile(settings);
+
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+    try {
+      for (const [key, value] of Object.entries(settings)) {
+        await callSupabase("app_settings", "POST", {
+          id: key,
+          is_available: value.isAvailable !== undefined ? value.isAvailable : true,
+          region: value.region || "مستوى المملكة",
+          warning_message: value.warningMessage || ""
+        });
+      }
+    } catch (err: any) {
+      console.error("⚠️ Supabase error writing app settings:", err.message);
+    }
   }
 }
 
