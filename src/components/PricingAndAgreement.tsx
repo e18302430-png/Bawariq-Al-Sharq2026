@@ -33,10 +33,24 @@ export default function PricingAndAgreement({ courierId, courierName, onSuccess 
         body: JSON.stringify({ courierId, signature: signature.trim() })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "عذراً، فشل اعتماد التوقيع الإلكتروني للطلب.");
-      }
+      const res = await fetch("/api/agreement/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ courierId, signature: signature.trim() })
+});
+
+const contentType = res.headers.get("content-type");
+let data;
+if (contentType && contentType.includes("application/json")) {
+  data = await res.json();
+} else {
+  const text = await res.text();
+  throw new Error(`خطأ من الخادم: ${text.substring(0, 100)}`);
+}
+
+if (!res.ok || !data.success) {
+  throw new Error(data.error || "عذراً، فشل اعتماد التوقيع الإلكتروني.");
+}
 
       onSuccess();
     } catch (err: any) {
